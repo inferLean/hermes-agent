@@ -14992,9 +14992,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 event=event,
                 command="new",
                 title="/new",
-                detail=(
+                detail=translate_or(
+                    "gateway.command_locale.destructive_confirm.detail_new",
                     "This starts a fresh session and discards the current "
-                    "conversation history."
+                    "conversation history.",
                 ),
                 execute=_do_reset,
             )
@@ -15178,9 +15179,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 except (ValueError, IndexError):
                     _undo_n = 1
             _undo_detail = (
-                "This removes the last user/assistant exchange from history."
+                translate_or(
+                    "gateway.command_locale.destructive_confirm.detail_undo_one",
+                    "This removes the last user/assistant exchange from history.",
+                )
                 if _undo_n == 1
-                else f"This removes the last {_undo_n} user turns from history."
+                else translate_or(
+                    "gateway.command_locale.destructive_confirm.detail_undo_many",
+                    "This removes the last {count} user turns from history.",
+                    count=_undo_n,
+                )
             )
             return await self._maybe_confirm_destructive_slash(
                 event=event,
@@ -20399,7 +20407,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         async def _on_confirm(choice: str):
             if choice == "cancel":
-                return f"🟡 /{command} cancelled. Conversation unchanged."
+                return translate_or(
+                    "gateway.command_locale.destructive_confirm.cancelled",
+                    "🟡 /{command} cancelled. Conversation unchanged.",
+                    command=command,
+                )
             persisted = False
             if choice == "always":
                 try:
@@ -20428,21 +20440,23 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             result = await execute()
             if choice == "always":
                 if persisted:
-                    note = (
+                    note = translate_or(
+                        "gateway.command_locale.destructive_confirm.always_saved",
                         "\n\nℹ️ Future /clear, /new, /reset, and /undo will run "
                         "without confirmation. Re-enable via "
-                        "`approvals.destructive_slash_confirm: true` in config.yaml."
+                        "`approvals.destructive_slash_confirm: true` in config.yaml.",
                     )
                 else:
                     # The user did approve this run, so the action still goes
                     # ahead, but the preference did not stick and the prompt
                     # will be back next time. Say so rather than promising an
                     # opt-out that was never written.
-                    note = (
+                    note = translate_or(
+                        "gateway.command_locale.destructive_confirm.always_save_failed",
                         "\n\n⚠️ Could not save that preference (config.yaml is not "
                         "writable), so /clear, /new, /reset, and /undo will ask "
                         "again next time. To silence it permanently, set "
-                        "`approvals.destructive_slash_confirm: false` in config.yaml."
+                        "`approvals.destructive_slash_confirm: false` in config.yaml.",
                     )
                 if isinstance(result, str):
                     return result + note
@@ -20452,14 +20466,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return result
 
         _p = self._typed_command_prefix_for(event.source.platform)
-        prompt_message = (
-            f"⚠️ **Confirm /{command}**\n\n"
-            f"{detail}\n\n"
+        prompt_message = translate_or(
+            "gateway.command_locale.destructive_confirm.prompt",
+            "⚠️ **Confirm /{command}**\n\n"
+            "{detail}\n\n"
             "Choose:\n"
             "• **Approve Once** — proceed this time only\n"
             "• **Always Approve** — proceed and silence this prompt permanently\n"
             "• **Cancel** — keep current conversation\n\n"
-            f"_Text fallback: reply `{_p}approve`, `{_p}always`, or `{_p}cancel`._"
+            "_Text fallback: reply `{prefix}approve`, `{prefix}always`, or "
+            "`{prefix}cancel`._",
+            command=command,
+            detail=detail,
+            prefix=_p,
         )
         return await self._request_slash_confirm(
             event=event,

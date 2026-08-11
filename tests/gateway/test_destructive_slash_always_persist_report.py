@@ -130,3 +130,37 @@ async def test_cancel_does_not_persist(fake_cli):
 
     assert fake_cli.calls == []
     assert "cancelled" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_persian_cancel_reply_is_localized(fake_cli, monkeypatch):
+    from agent import i18n
+
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        out = await _resolve(_runner(), "cancel")
+    finally:
+        i18n.reset_language_cache()
+
+    assert "لغو شد" in out
+    assert "cancelled" not in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_persian_always_followup_is_localized(fake_cli, monkeypatch):
+    from agent import i18n
+
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        out = await _resolve(
+            _runner(),
+            "always",
+            result="🧹 گفت‌وگو پاک شد.",
+        )
+    finally:
+        i18n.reset_language_cache()
+
+    assert "بدون تأیید اجرا می‌شوند" in out
+    assert "Future /clear" not in out

@@ -214,6 +214,37 @@ async def test_root_telegram_dm_new_shows_create_topic_instruction(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_persian_new_confirmation_localizes_the_complete_prompt(monkeypatch):
+    """Persian /new must not expose the English destructive-action prompt."""
+    from agent import i18n
+    from tools import slash_confirm as slash_confirm_mod
+
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    runner = _make_runner()
+    runner._telegram_topic_mode_enabled = lambda _source: False
+    runner._read_user_config = lambda: {
+        "approvals": {"destructive_slash_confirm": True}
+    }
+    adapter = runner.adapters[Platform.TELEGRAM]
+    adapter.typed_command_prefix = "/"
+    adapter.send_slash_confirm = AsyncMock(return_value=None)
+
+    try:
+        result = await runner._handle_message(_make_event("/new"))
+    finally:
+        slash_confirm_mod.clear(runner._session_key_for_source(_make_source()))
+        i18n.reset_language_cache()
+
+    assert "تأیید /new" in result
+    assert "این کار یک نشست تازه آغاز می‌کند" in result
+    assert "تأیید یک‌باره" in result
+    assert "تأیید همیشگی" in result
+    assert "Confirm /new" not in result
+    assert "Approve Once" not in result
+
+
+@pytest.mark.asyncio
 async def test_managed_topic_binding_reuses_restored_session_over_static_lane_session(
     tmp_path, monkeypatch
 ):

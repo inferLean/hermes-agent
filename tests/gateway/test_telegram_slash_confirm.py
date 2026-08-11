@@ -76,4 +76,40 @@ class TestSendSlashConfirm:
         assert "script\\_name" in sent["text"]
         assert "\\." in sent["text"]
 
+    @pytest.mark.asyncio
+    async def test_persian_uses_localized_confirmation_buttons(self, monkeypatch):
+        """Bale's Telegram-compatible buttons must follow the active locale."""
+        from agent import i18n
+        from plugins.platforms.telegram import adapter as adapter_module
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+        i18n.reset_language_cache()
+        monkeypatch.setattr(
+            adapter_module,
+            "InlineKeyboardButton",
+            lambda text, callback_data: {"text": text, "callback_data": callback_data},
+        )
+        monkeypatch.setattr(adapter_module, "InlineKeyboardMarkup", lambda rows: rows)
+        adapter = _make_adapter()
+        sent = {}
+
+        async def mock_send(**kwargs):
+            sent.update(kwargs)
+            return SimpleNamespace(message_id=8)
+
+        adapter._bot.send_message = AsyncMock(side_effect=mock_send)
+        try:
+            result = await adapter.send_slash_confirm(
+                chat_id="100",
+                title="/new",
+                message="تأیید نشست تازه",
+                session_key="sk",
+                confirm_id="cid-fa",
+            )
+        finally:
+            i18n.reset_language_cache()
+
+        labels = [button["text"] for row in sent["reply_markup"] for button in row]
+        assert result.success is True
+        assert labels == ["✅ تأیید یک‌باره", "🔒 تأیید همیشگی", "❌ لغو"]
 
