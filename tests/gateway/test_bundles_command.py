@@ -89,6 +89,23 @@ class TestHandleBundlesCommand:
         result = asyncio.run(runner._handle_bundles_command(_make_event("/bundles")))
         assert "No skill bundles" in result
 
+    def test_empty_uses_active_persian_locale(self, bundles_env, monkeypatch):
+        """The empty /bundles guidance must be Persian when fa is active."""
+        from agent import i18n
+
+        runner = _make_runner()
+        monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+        i18n.reset_language_cache()
+        try:
+            result = asyncio.run(
+                runner._handle_bundles_command(_make_event("/bundles"))
+            )
+        finally:
+            i18n.reset_language_cache()
+
+        assert "هیچ بسته مهارتی نصب نشده است" in result
+        assert "No skill bundles" not in result
+
 
 class TestBundleResolutionPriority:
     """Verify resolve_bundle_command_key picks bundles over skills."""
@@ -98,4 +115,3 @@ class TestBundleResolutionPriority:
         _make_bundle(bundles_dir, "research", ["alpha"])
         from agent.skill_bundles import resolve_bundle_command_key
         assert resolve_bundle_command_key("research") == "/research"
-

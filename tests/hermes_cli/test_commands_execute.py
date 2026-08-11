@@ -29,6 +29,23 @@ def test_some_commands_are_migrated():
     assert {"version", "egress", "profile", "bundles", "help", "commands"} <= names
 
 
+def test_gateway_help_translates_every_builtin_description_to_persian(monkeypatch):
+    """Persian /help must not expose the registry's English descriptions."""
+    from agent import i18n
+
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        reply = execute_command("help", CommandContext(surface="gateway"))
+    finally:
+        i18n.reset_language_cache()
+
+    assert "`/new [name]` -- آغاز یک نشست تازه" in reply.text
+    assert "`/sessions` -- مرور و ادامه نشست‌های پیشین" in reply.text
+    assert "Start a new session" not in reply.text
+    assert "Browse and resume previous sessions" not in reply.text
+
+
 
 
 def test_unmigrated_commands_have_no_executor():
@@ -36,7 +53,6 @@ def test_unmigrated_commands_have_no_executor():
         if not cmd.execute:
             assert resolve_executor(cmd) is None
             assert run_execute(cmd, CommandContext()) is None
-
 
 
 

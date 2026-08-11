@@ -376,6 +376,37 @@ class TestHandleSessionsCommand:
     """Tests for GatewayRunner._handle_sessions_command."""
 
     @pytest.mark.asyncio
+    async def test_sessions_uses_active_persian_locale(self, tmp_path, monkeypatch):
+        """The complete /sessions frame must be Persian when fa is active."""
+        from agent import i18n
+        from hermes_state import SessionDB
+
+        db = SessionDB(db_path=tmp_path / "state.db")
+        event = _make_event(text="/sessions")
+        lane_key = _session_key_for_event(event)
+        db.create_session(
+            "past_session", "telegram", session_key=lane_key,
+            user_id="12345", chat_id="67890",
+        )
+        db.set_session_title("past_session", "پروژه آزمایشی")
+        runner = _make_runner(session_db=db, event=event)
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+        i18n.reset_language_cache()
+        try:
+            result = await runner._handle_sessions_command(event)
+        finally:
+            i18n.reset_language_cache()
+            db.close()
+
+        assert "نشست‌های نام‌گذاری‌شده" in result
+        assert "ادامه:" in result
+        assert "بیشتر:" in result
+        assert "Named Sessions" not in result
+        assert "Resume:" not in result
+        assert "More:" not in result
+
+    @pytest.mark.asyncio
     async def test_sessions_busy_platform_lists_exact_lane_and_excludes_current_tip(
         self, tmp_path
     ):
@@ -766,5 +797,4 @@ class TestSameMatrixRoomThreadScoping:
         caller = self._msrc(thread_id="thread-a")
         victim_origin = self._msrc(thread_id="thread-b")
         assert runner._same_matrix_room(caller, victim_origin) is False
-
 

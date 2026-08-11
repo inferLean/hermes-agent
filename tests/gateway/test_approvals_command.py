@@ -57,3 +57,31 @@ async def test_gateway_rejects_non_admin_persistent_approval_change():
     run.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_gateway_admin_rejection_uses_active_persian_locale(monkeypatch):
+    """The /approvals authorization error must not fall back to English."""
+    from agent import i18n
+
+    runner = _runner()
+    runner.config = SimpleNamespace(
+        platforms={
+            Platform.TELEGRAM: SimpleNamespace(
+                extra={
+                    "allow_admin_from": ["admin-1"],
+                    "user_allowed_commands": ["approvals"],
+                }
+            )
+        }
+    )
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        with patch("hermes_cli.approval_mode.run_approval_mode_command") as run:
+            output = await runner._handle_approvals_command(_event("/approvals off"))
+    finally:
+        i18n.reset_language_cache()
+
+    assert "فقط مدیران درگاه" in output
+    assert "Only gateway admins" not in output
+    run.assert_not_called()
+

@@ -1,9 +1,9 @@
 # Hermes static-message catalog -- English (baseline / source of truth)
 #
-# Only user-facing static messages from the CLI approval prompt and a handful
-# of gateway slash-command replies live here.  Agent-generated output, log
-# lines, error tracebacks, tool outputs, and slash-command descriptions stay
-# in English and are NOT translated -- see agent/i18n.py for scope rationale.
+# User-facing static messages from Hermes live here. Locale-specific extensions
+# may additionally translate the complete gateway command interface through
+# translate_or(). Agent output, identifiers, command names, model/provider
+# names, paths, raw tool output, and upstream error details stay unchanged.
 #
 # Keys are dotted paths; nesting below is purely for readability.  Values may
 # contain {placeholder} tokens for str.format substitution.  When adding a

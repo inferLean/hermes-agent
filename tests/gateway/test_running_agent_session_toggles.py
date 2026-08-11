@@ -135,3 +135,20 @@ async def test_verbose_dispatches_mid_run(monkeypatch):
     assert "can't run mid-turn" not in (result or "")
 
 
+@pytest.mark.asyncio
+async def test_busy_rejection_uses_active_persian_locale(monkeypatch):
+    """Rejected commands during a running turn use the Persian interface."""
+    from agent import i18n
+
+    runner = _make_runner()
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        result = await runner._handle_message(_make_event("/reasoning"))
+    finally:
+        i18n.reset_language_cache()
+
+    assert "عامل در حال اجراست" in result
+    assert "نمی‌تواند میان نوبت اجرا شود" in result
+    assert "Agent is running" not in result
+

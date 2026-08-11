@@ -426,6 +426,27 @@ class TestPlatformSlashCommand:
         assert "not paired" in out
 
     @pytest.mark.asyncio
+    async def test_list_uses_active_persian_locale(self, monkeypatch):
+        """The /platform status frame must translate its static labels."""
+        from agent import i18n
+
+        runner = _make_runner()
+        runner.adapters[Platform.DISCORD] = StubAdapter(platform=Platform.DISCORD)
+        monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+        i18n.reset_language_cache()
+        try:
+            out = await runner._handle_platform_command(
+                self._make_event("/platform list")
+            )
+        finally:
+            i18n.reset_language_cache()
+
+        assert "**سکوهای درگاه**" in out
+        assert "متصل:" in out
+        assert "Gateway platforms" not in out
+        assert "Connected:" not in out
+
+    @pytest.mark.asyncio
     async def test_pause_command_pauses_queued_platform(self):
         runner = _make_runner()
         runner._failed_platforms[Platform.WHATSAPP] = {
@@ -852,4 +873,3 @@ class TestVoiceInputCallbackWiring:
         assert adapter._voice_input_callback is not None, (
             "startup must wire _voice_input_callback"
         )
-

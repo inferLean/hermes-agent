@@ -95,14 +95,24 @@ def format_gateway_session_listing(
     title: str = "Sessions",
 ) -> str:
     """Render a compact Markdown-ish session list for gateway messengers."""
+    from agent.i18n import translate_or
+
     if not rows:
-        return (
+        return translate_or(
+            "gateway.command_locale.sessions.none",
             "No sessions found.\n"
             "Use `/title My Session` to name this chat, or `/sessions full` "
-            "to include unnamed sessions."
+            "to include unnamed sessions.",
         )
 
-    lines = [f"📋 **{title}**", ""]
+    lines = [
+        translate_or(
+            "gateway.command_locale.sessions.header",
+            "📋 **{title}**",
+            title=title,
+        ),
+        "",
+    ]
     for idx, row in enumerate(rows, start=1):
         session_id = str(row.get("id") or "")
         title_text = str(row.get("title") or "—")
@@ -110,8 +120,28 @@ def format_gateway_session_listing(
         source = str(row.get("source") or "")
         source_part = f" `{source}`" if include_source and source else ""
         preview_part = f" — _{preview}_" if preview else ""
-        lines.append(f"{idx}. **{title_text}**{source_part} — `{session_id}`{preview_part}")
+        lines.append(
+            translate_or(
+                "gateway.command_locale.sessions.item",
+                "{index}. **{title}**{source_part} — `{session_id}`{preview_part}",
+                index=idx,
+                title=title_text,
+                source_part=source_part,
+                session_id=session_id,
+                preview_part=preview_part,
+            )
+        )
     lines.append("")
-    lines.append("Resume: `/resume <session id>` or `/resume <number>` from `/resume`.")
-    lines.append("More: `/sessions all`, `/sessions full`, `/sessions search <query>`.")
+    lines.append(
+        translate_or(
+            "gateway.command_locale.sessions.resume",
+            "Resume: `/resume <session id>` or `/resume <number>` from `/resume`.",
+        )
+    )
+    lines.append(
+        translate_or(
+            "gateway.command_locale.sessions.more",
+            "More: `/sessions all`, `/sessions full`, `/sessions search <query>`.",
+        )
+    )
     return "\n".join(lines)

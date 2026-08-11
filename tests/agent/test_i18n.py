@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from agent import i18n
 
 
 LOCALES_DIR = Path(__file__).resolve().parents[2] / "locales"
+OPTIONAL_LOCALE_PREFIXES = ("gateway.command_locale.",)
 
 
 def _load_raw(lang: str) -> dict:
@@ -42,8 +44,14 @@ def test_catalog_keys_match_english(lang: str):
     """Every non-English catalog must have exactly the same key set as English."""
     en_keys = set(_flatten(_load_raw("en")).keys())
     lang_keys = set(_flatten(_load_raw(lang)).keys())
-    missing = en_keys - lang_keys
-    extra = lang_keys - en_keys
+    missing = {
+        key for key in en_keys - lang_keys
+        if not key.startswith(OPTIONAL_LOCALE_PREFIXES)
+    }
+    extra = {
+        key for key in lang_keys - en_keys
+        if not key.startswith(OPTIONAL_LOCALE_PREFIXES)
+    }
     assert not missing, f"{lang}.yaml missing keys: {sorted(missing)}"
     assert not extra, f"{lang}.yaml has keys not in en.yaml: {sorted(extra)}"
 
@@ -87,6 +95,58 @@ def test_persian_language_aliases_normalize_to_fa(value: str):
 def test_persian_catalog_translates_gateway_copy():
     """Selecting Persian must return Persian rather than the English fallback."""
     assert i18n.t("gateway.goal_cleared", lang="fa") == "✓ هدف پاک شد."
+
+
+def test_persian_catalog_covers_every_gateway_command_description():
+    """Every built-in command visible in messaging must have Persian help."""
+    from hermes_cli.commands import COMMAND_REGISTRY
+
+    fa_keys = set(_flatten(_load_raw("fa")).keys())
+    expected = {
+        f"gateway.command_locale.descriptions.{cmd.name}"
+        for cmd in COMMAND_REGISTRY
+        if not cmd.cli_only or cmd.gateway_config_gate
+    }
+    assert not expected - fa_keys
+
+
+def test_persian_catalog_covers_every_optional_command_translation_key():
+    """Every static command key requested by translate_or has Persian copy."""
+    repo_root = Path(__file__).resolve().parents[2]
+    modules = (
+        "agent/account_usage.py",
+        "gateway/run.py",
+        "gateway/slash_commands.py",
+        "hermes_cli/codex_runtime_switch.py",
+        "hermes_cli/commands.py",
+        "hermes_cli/goals.py",
+        "hermes_cli/session_listing.py",
+        "hermes_cli/write_approval_commands.py",
+    )
+    expected: set[str] = set()
+    for relative_path in modules:
+        tree = ast.parse((repo_root / relative_path).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not isinstance(node.func, ast.Name) or node.func.id != "translate_or":
+                continue
+            if not node.args:
+                continue
+            for value in ast.walk(node.args[0]):
+                if (
+                    isinstance(value, ast.Constant)
+                    and isinstance(value.value, str)
+                    and value.value.startswith("gateway.command_locale.")
+                    and not value.value.endswith(".")
+                ):
+                    expected.add(value.value)
+
+    fa_keys = set(_flatten(_load_raw("fa")).keys())
+    assert not expected - fa_keys, (
+        "fa.yaml is missing command translation keys: "
+        f"{sorted(expected - fa_keys)}"
+    )
 
 
 
@@ -152,4 +212,3 @@ def test_locales_dir_env_override_ignored_when_missing(tmp_path, monkeypatch):
     assert result != tmp_path / "does-not-exist"
     # In a source checkout this is the repo-root locales dir.
     assert result.name == "locales"
-

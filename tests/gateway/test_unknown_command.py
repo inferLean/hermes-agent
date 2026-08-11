@@ -120,6 +120,31 @@ async def test_unknown_slash_command_returns_guidance(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_unknown_slash_command_uses_active_persian_locale(monkeypatch):
+    """Hermes-authored unknown-command guidance is localized for Bale."""
+    from agent import i18n
+    import gateway.run as gateway_run
+
+    runner = _make_runner()
+    runner._run_agent = AsyncMock(
+        side_effect=AssertionError("unknown slash command leaked to agent")
+    )
+    monkeypatch.setattr(
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+    )
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        result = await runner._handle_message(_make_event("/ناشناخته"))
+    finally:
+        i18n.reset_language_cache()
+
+    assert "فرمان ناشناخته" in result
+    assert "/commands" in result
+    assert "Unknown command" not in result
+
+
+@pytest.mark.asyncio
 async def test_known_slash_command_not_flagged_as_unknown(monkeypatch):
     """A real built-in like /status must NOT hit the unknown-command guard."""
     runner = _make_runner()

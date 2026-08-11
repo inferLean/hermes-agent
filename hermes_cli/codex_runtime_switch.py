@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+from agent.i18n import translate_or
 logger = logging.getLogger(__name__)
 
 
@@ -54,9 +55,11 @@ def parse_args(arg_string: str) -> tuple[Optional[str], list[str]]:
         return "auto", []
     if raw in VALID_RUNTIMES:
         return raw, []
-    return None, [
-        f"Unknown runtime {raw!r}. Use one of: auto, codex_app_server, on, off"
-    ]
+    return None, [translate_or(
+        "gateway.command_locale.codex_runtime.unknown",
+        "Unknown runtime {runtime!r}. Use one of: auto, codex_app_server, on, off",
+        runtime=raw,
+    )]
 
 
 def get_current_runtime(config: dict) -> str:
@@ -131,9 +134,18 @@ def apply(
     # Read-only call: just report state
     if new_value is None:
         ok, ver = _check_binary_cached()
-        msg = (
-            f"openai_runtime: {current}\n"
-            f"codex CLI: {'OK ' + ver if ok else 'not available — ' + (ver or 'install with `npm i -g @openai/codex`')}"
+        cli_state = translate_or(
+            "gateway.command_locale.codex_runtime.cli_ok",
+            "OK {version}", version=ver,
+        ) if ok else translate_or(
+            "gateway.command_locale.codex_runtime.cli_unavailable",
+            "not available — {reason}",
+            reason=ver or "install with `npm i -g @openai/codex`",
+        )
+        msg = translate_or(
+            "gateway.command_locale.codex_runtime.status",
+            "openai_runtime: {runtime}\ncodex CLI: {cli_state}",
+            runtime=current, cli_state=cli_state,
         )
         return CodexRuntimeStatus(
             success=True,
@@ -159,7 +171,10 @@ def apply(
             success=True,
             new_value=current,
             old_value=current,
-            message=f"openai_runtime already set to {current}",
+            message=translate_or(
+                "gateway.command_locale.codex_runtime.already_set",
+                "openai_runtime already set to {runtime}", runtime=current,
+            ),
         )
 
     # If switching ON, verify codex CLI is installed before persisting —
@@ -172,10 +187,11 @@ def apply(
                 success=False,
                 new_value=None,
                 old_value=current,
-                message=(
-                    "Cannot enable codex_app_server runtime: "
-                    f"{ver_or_msg or 'codex CLI not available'}\n"
-                    "Install with: npm i -g @openai/codex"
+                message=translate_or(
+                    "gateway.command_locale.codex_runtime.cannot_enable",
+                    "Cannot enable codex_app_server runtime: {reason}\n"
+                    "Install with: npm i -g @openai/codex",
+                    reason=ver_or_msg or "codex CLI not available",
                 ),
                 codex_binary_ok=False,
                 codex_version=None,
@@ -192,19 +208,31 @@ def apply(
                     success=False,
                     new_value=new_value,
                     old_value=current,
-                    message=f"updated config in memory but persist failed: {exc}",
+                    message=translate_or(
+                        "gateway.command_locale.codex_runtime.persist_failed",
+                        "updated config in memory but persist failed: {error}",
+                        error=str(exc),
+                    ),
                 )
 
     if reapplying_enable:
-        msg_lines = [
-            f"openai_runtime already set to {current} — re-applying migration"
-        ]
+        msg_lines = [translate_or(
+            "gateway.command_locale.codex_runtime.reapplying",
+            "openai_runtime already set to {runtime} — re-applying migration",
+            runtime=current,
+        )]
     else:
-        msg_lines = [f"openai_runtime: {current} → {new_value}"]
+        msg_lines = [translate_or(
+            "gateway.command_locale.codex_runtime.changed",
+            "openai_runtime: {old} → {new}", old=current, new=new_value,
+        )]
     if new_value == "codex_app_server":
         ok, ver = _check_binary_cached()
         if ok:
-            msg_lines.append(f"codex CLI: {ver}")
+            msg_lines.append(translate_or(
+                "gateway.command_locale.codex_runtime.cli_version",
+                "codex CLI: {version}", version=ver,
+            ))
         # Auto-migrate Hermes' MCP servers + Codex's installed curated
         # plugins into ~/.codex/config.toml so the spawned codex subprocess
         # sees the same tool surface AND can call back into Hermes for
@@ -219,57 +247,81 @@ def apply(
                 s for s in mig_report.migrated if s != "hermes-tools"
             ]
             if user_servers:
-                msg_lines.append(
-                    f"Migrated {len(user_servers)} MCP server(s): "
-                    f"{', '.join(user_servers)}"
-                )
+                msg_lines.append(translate_or(
+                    "gateway.command_locale.codex_runtime.migrated_servers",
+                    "Migrated {count} MCP server(s): {names}",
+                    count=len(user_servers), names=", ".join(user_servers),
+                ))
             # Native Codex plugin migration (Linear, GitHub, etc.)
             if mig_report.migrated_plugins:
-                msg_lines.append(
-                    f"Migrated {len(mig_report.migrated_plugins)} native "
-                    f"Codex plugin(s): {', '.join(mig_report.migrated_plugins)}"
-                )
+                msg_lines.append(translate_or(
+                    "gateway.command_locale.codex_runtime.migrated_plugins",
+                    "Migrated {count} native Codex plugin(s): {names}",
+                    count=len(mig_report.migrated_plugins),
+                    names=", ".join(mig_report.migrated_plugins),
+                ))
             elif mig_report.plugin_query_error:
-                msg_lines.append(
-                    f"Codex plugin discovery skipped: "
-                    f"{mig_report.plugin_query_error}"
-                )
+                msg_lines.append(translate_or(
+                    "gateway.command_locale.codex_runtime.plugin_discovery_skipped",
+                    "Codex plugin discovery skipped: {error}",
+                    error=mig_report.plugin_query_error,
+                ))
             # Permissions + Hermes tool callback are always-on production
             # bits the user benefits from knowing about.
             if mig_report.wrote_permissions_default:
-                msg_lines.append(
-                    f"Default sandbox: {mig_report.wrote_permissions_default} "
-                    f"(no approval prompt on every write)"
-                )
+                msg_lines.append(translate_or(
+                    "gateway.command_locale.codex_runtime.default_sandbox",
+                    "Default sandbox: {sandbox} (no approval prompt on every write)",
+                    sandbox=mig_report.wrote_permissions_default,
+                ))
             if "hermes-tools" in mig_report.migrated:
-                msg_lines.append(
+                msg_lines.append(translate_or(
+                    "gateway.command_locale.codex_runtime.callback",
                     "Hermes tool callback registered: codex can now use "
                     "web_search, web_extract, browser_*, vision_analyze, "
                     "image_generate, skill_view, skills_list, text_to_speech, "
-                    "kanban_* (worker + orchestrator) via MCP."
-                )
-                msg_lines.append(
+                    "kanban_* (worker + orchestrator) via MCP.",
+                ))
+                msg_lines.append(translate_or(
+                    "gateway.command_locale.codex_runtime.callback_limits",
                     "  (delegate_task, memory, session_search, todo run "
                     "only on the default Hermes runtime — they need the "
-                    "agent loop context.)"
-                )
-            msg_lines.append(f"  (config: {mig_report.target_path})")
+                    "agent loop context.)",
+                ))
+            msg_lines.append(translate_or(
+                "gateway.command_locale.codex_runtime.config_path",
+                "  (config: {path})", path=mig_report.target_path,
+            ))
             for err in mig_report.errors:
-                msg_lines.append(f"⚠ MCP migration: {err}")
+                msg_lines.append(translate_or(
+                    "gateway.command_locale.codex_runtime.migration_error",
+                    "⚠ MCP migration: {error}", error=err,
+                ))
         except Exception as exc:
-            msg_lines.append(f"⚠ MCP migration skipped: {exc}")
-        msg_lines.append(
+            msg_lines.append(translate_or(
+                "gateway.command_locale.codex_runtime.migration_skipped",
+                "⚠ MCP migration skipped: {error}", error=str(exc),
+            ))
+        msg_lines.append(translate_or(
+            "gateway.command_locale.codex_runtime.enabled",
             "OpenAI/Codex turns now run through `codex app-server` "
             "(terminal/file ops/patching inside Codex; "
-            "Hermes tools available via MCP callback)."
-        )
-        msg_lines.append(
+            "Hermes tools available via MCP callback).",
+        ))
+        msg_lines.append(translate_or(
+            "gateway.command_locale.codex_runtime.next_session_cache",
             "Effective on next session — current cached agent keeps "
-            "the prior runtime to preserve prompt cache."
-        )
+            "the prior runtime to preserve prompt cache.",
+        ))
     else:
-        msg_lines.append("OpenAI/Codex turns will use the default Hermes runtime.")
-        msg_lines.append("Effective on next session.")
+        msg_lines.append(translate_or(
+            "gateway.command_locale.codex_runtime.disabled",
+            "OpenAI/Codex turns will use the default Hermes runtime.",
+        ))
+        msg_lines.append(translate_or(
+            "gateway.command_locale.codex_runtime.next_session",
+            "Effective on next session.",
+        ))
     return CodexRuntimeStatus(
         success=True,
         new_value=new_value,

@@ -320,6 +320,49 @@ async def test_group_new_keeps_existing_reset_semantics_when_dm_topic_mode_enabl
 
 
 @pytest.mark.asyncio
+async def test_group_new_does_not_append_an_english_tip_in_persian(
+    tmp_path, monkeypatch
+):
+    """A localized /new response must not leak an untranslated random tip."""
+    import gateway.run as gateway_run
+    from agent import i18n
+
+    session_db = SessionDB(db_path=tmp_path / "state.db")
+    runner = _make_runner(session_db=session_db)
+    group_source = _make_group_source(thread_id="555")
+    group_key = build_session_key(group_source)
+    runner.session_store.reset_session.return_value = SessionEntry(
+        session_key=group_key,
+        session_id="new-group-session",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+        platform=Platform.TELEGRAM,
+        chat_type="group",
+        origin=group_source,
+    )
+    runner._format_session_info = lambda: ""
+
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    monkeypatch.setattr(
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+    )
+    monkeypatch.setattr(
+        "hermes_cli.tips.get_random_tip", lambda: "English-only pinned tip"
+    )
+    i18n.reset_language_cache()
+    try:
+        result = await runner._handle_message(
+            _make_group_event("/new", thread_id="555")
+        )
+    finally:
+        i18n.reset_language_cache()
+        session_db.close()
+
+    assert "نشست بازنشانی شد" in result
+    assert "English-only pinned tip" not in result
+
+
+@pytest.mark.asyncio
 async def test_new_inside_telegram_topic_rewrites_binding_to_new_session(tmp_path, monkeypatch):
     """Regression: /new inside a topic must rewrite the binding table.
 
@@ -761,4 +804,3 @@ def test_get_telegram_topic_binding_by_session_returns_binding(tmp_path):
 # ---------------------------------------------------------------------------
 # Test for session-split thread_id recovery (issue #27166)
 # ---------------------------------------------------------------------------
-
