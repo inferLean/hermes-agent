@@ -5,7 +5,7 @@ on:
   # Docker Hub secrets are resolved by the top-level workflow, never across
   # a reusable-workflow boundary.
   push:
-    branches: [main]
+    branches: [main, codex/bale-persian-v2026.8.3]
   release:
     types: [published]
   # CI calls this only for untrusted PR build/test coverage. Those runs never
@@ -24,14 +24,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  IMAGE_NAME: nousresearch/hermes-agent
+  IMAGE_NAME: ${{ github.repository == 'NousResearch/hermes-agent' && 'nousresearch/hermes-agent' || 'ghcr.io/inferlean/hermes-agent' }}
+  INFERLEAN_RELEASE_TAG: v2026.8.3-bale-fa.1
 
 jobs:
   # Build and test the image for each architecture. This job runs PR code,
   # so it must remain secret-free. Publishing happens in the separate,
   # protected publish job after these tests pass.
   build:
-    if: github.repository == 'NousResearch/hermes-agent'
+    if: github.repository == 'NousResearch/hermes-agent' || github.repository == 'inferLean/hermes-agent'
     strategy:
       fail-fast: false
       matrix:
@@ -137,8 +138,15 @@ jobs:
   # matrix passes. This job is the sole Docker Hub credential boundary.
   # ---------------------------------------------------------------------------
   publish:
-    if: github.repository == 'NousResearch/hermes-agent' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release')
+    if: >-
+      (github.repository == 'NousResearch/hermes-agent' &&
+        ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release')) ||
+      (github.repository == 'inferLean/hermes-agent' &&
+        github.event_name == 'push' && github.ref == 'refs/heads/codex/bale-persian-v2026.8.3')
     needs: [build]
+    permissions:
+      contents: read
+      packages: write
     environment: container-publish
     strategy:
       fail-fast: false
@@ -172,10 +180,19 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to Docker Hub
+        if: github.repository == 'NousResearch/hermes-agent'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        if: github.repository == 'inferLean/hermes-agent'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Push by digest only (no tag). The merge job assembles the tagged
       # manifest list after both architecture publishers complete.
@@ -217,9 +234,16 @@ jobs:
   # On releases: tags :<release_tag_name>.
   # ---------------------------------------------------------------------------
   merge:
-    if: github.repository == 'NousResearch/hermes-agent' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release')
+    if: >-
+      (github.repository == 'NousResearch/hermes-agent' &&
+        ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release')) ||
+      (github.repository == 'inferLean/hermes-agent' &&
+        github.event_name == 'push' && github.ref == 'refs/heads/codex/bale-persian-v2026.8.3')
     runs-on: ubuntu-latest
     needs: [publish]
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 10
     environment: container-publish
     steps:
@@ -242,16 +266,26 @@ jobs:
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to Docker Hub
+        if: github.repository == 'NousResearch/hermes-agent'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        if: github.repository == 'inferLean/hermes-agent'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
         env:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INFERLEAN_RELEASE_TAG: ${{ env.INFERLEAN_RELEASE_TAG }}
         run: |
           set -euo pipefail
           args=()
@@ -260,6 +294,8 @@ jobs:
           done
           if [ "${{ github.event_name }}" = "release" ]; then
             tags=(-t "${IMAGE_NAME}:${RELEASE_TAG}")
+          elif [ "${{ github.repository }}" = "inferLean/hermes-agent" ]; then
+            tags=(-t "${IMAGE_NAME}:${INFERLEAN_RELEASE_TAG}" -t "${IMAGE_NAME}:sha-${GITHUB_SHA::12}")
           else
             tags=(-t "${IMAGE_NAME}:main" -t "${IMAGE_NAME}:latest")
           fi
@@ -281,9 +317,12 @@ jobs:
         env:
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INFERLEAN_RELEASE_TAG: ${{ env.INFERLEAN_RELEASE_TAG }}
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             docker buildx imagetools inspect "${IMAGE_NAME}:${RELEASE_TAG}"
+          elif [ "${{ github.repository }}" = "inferLean/hermes-agent" ]; then
+            docker buildx imagetools inspect "${IMAGE_NAME}:${INFERLEAN_RELEASE_TAG}"
           else
             docker buildx imagetools inspect "${IMAGE_NAME}:main"
           fi

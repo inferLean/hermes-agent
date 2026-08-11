@@ -17,7 +17,6 @@ from gateway.config import Platform, PlatformConfig
 from plugins.platforms.telegram.adapter import (
     TelegramAdapter,
     check_telegram_requirements,
-    telegram_deps_present,
 )
 
 BALE_API_BASE = "https://tapi.bale.ai/bot"
@@ -186,8 +185,7 @@ def register(ctx: Any) -> None:
         name="bale",
         label="Bale (بله)",
         adapter_factory=_build_adapter,
-        check_fn=telegram_deps_present,
-        ensure_deps_fn=check_telegram_requirements,
+        check_fn=check_telegram_requirements,
         is_connected=_is_connected,
         required_env=["BALE_BOT_TOKEN"],
         install_hint="Run `hermes setup` to install messaging dependencies.",
