@@ -192,6 +192,28 @@ def test_adapter_builds_bale_session_sources(bale_plugin):
     assert source.user_id == "42"
 
 
+@pytest.mark.asyncio
+async def test_adapter_suppresses_replayed_bale_message(monkeypatch, bale_plugin):
+    """One Bale message must reach Hermes once even if polling replays it."""
+    forwarded: list[object] = []
+
+    async def record_forward(_adapter, event) -> None:
+        forwarded.append(event)
+
+    monkeypatch.setattr(bale_plugin.TelegramAdapter, "handle_message", record_forward)
+    adapter = bale_plugin.BaleAdapter(
+        PlatformConfig(enabled=True, token="test-token", extra={})
+    )
+    source = SimpleNamespace(chat_id="42")
+    first = SimpleNamespace(source=source, message_id="73", platform_update_id=100)
+    replay = SimpleNamespace(source=source, message_id="73", platform_update_id=101)
+
+    await adapter.handle_message(first)
+    await adapter.handle_message(replay)
+
+    assert forwarded == [first]
+
+
 def test_connected_check_accepts_configured_token(monkeypatch, bale_plugin):
     """Gateway status must report Bale configured from config or BALE_BOT_TOKEN."""
     monkeypatch.delenv("BALE_BOT_TOKEN", raising=False)

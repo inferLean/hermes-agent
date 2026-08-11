@@ -9,6 +9,7 @@ not document are disabled here instead of being probed at runtime.
 from __future__ import annotations
 
 import os
+from collections import OrderedDict
 from typing import Any
 
 import httpx
@@ -66,6 +67,29 @@ class BaleAdapter(TelegramAdapter):
         config.extra = _bale_extra(config.extra)
         super().__init__(config)
         self.platform = Platform("bale")
+        self._recent_message_keys: OrderedDict[str, None] = OrderedDict()
+
+    async def handle_message(self, event: Any) -> None:
+        """Forward each Bale message once when polling replays an update."""
+        source = getattr(event, "source", None)
+        chat_id = getattr(source, "chat_id", None)
+        message_id = getattr(event, "message_id", None)
+        update_id = getattr(event, "platform_update_id", None)
+        if chat_id is not None and message_id is not None:
+            key = f"message:{chat_id}:{message_id}"
+        elif update_id is not None:
+            key = f"update:{update_id}"
+        else:
+            key = ""
+
+        if key:
+            if key in self._recent_message_keys:
+                return
+            self._recent_message_keys[key] = None
+            if len(self._recent_message_keys) > 4096:
+                self._recent_message_keys.popitem(last=False)
+
+        await super().handle_message(event)
 
     def _reactions_enabled(self) -> bool:
         """Keep Telegram-only reaction lifecycle calls disabled for Bale."""
