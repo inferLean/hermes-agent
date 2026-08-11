@@ -1,16 +1,16 @@
 """Lightweight internationalization (i18n) for Hermes static user-facing messages.
 
-Scope (thin slice, by design): only the highest-impact static strings shown
-to the user by Hermes itself -- approval prompts, a handful of gateway slash
-command replies, restart-drain notices.  Agent-generated output, log lines,
-error tracebacks, tool outputs, and slash-command descriptions all stay in
-English.
+Scope: static strings authored by Hermes itself, including approval prompts,
+gateway slash-command replies and descriptions, and restart-drain notices.
+Agent-generated output, identifiers, command names, model/provider names,
+paths, raw tool output, and upstream error details are intentionally preserved.
 
 Catalog files live under ``locales/<lang>.yaml`` at the repo root.  Each
 catalog is a flat dict keyed by dotted paths (e.g. ``approval.choose`` or
-``gateway.approval_expired``).  Missing keys fall back to English; if English
-is missing too, the key path itself is returned so a broken catalog never
-crashes the agent.
+``gateway.approval_expired``).  Core missing keys fall back to English. The
+optional ``gateway.command_locale`` extension uses :func:`translate_or`, so a
+locale can translate the complete messaging-command interface incrementally
+while every other locale keeps the caller-owned English default.
 
 Usage::
 
@@ -275,9 +275,44 @@ def t(key: str, lang: str | None = None, **format_kwargs: Any) -> str:
     return value
 
 
+def translate_or(
+    key: str,
+    default: str,
+    lang: str | None = None,
+    **format_kwargs: Any,
+) -> str:
+    """Translate an optional catalog key, falling back to caller-owned text.
+
+    This is for localization added incrementally around legacy static UI text.
+    Unlike :func:`t`, a key missing from both the active and English catalogs
+    returns ``default`` instead of exposing the dotted key to users.
+    """
+    target = _normalize_lang(lang) if lang else get_language()
+    value = _load_catalog(target).get(key)
+    if value is None and target != DEFAULT_LANGUAGE:
+        value = _load_catalog(DEFAULT_LANGUAGE).get(key)
+    if value is None:
+        value = default
+
+    if format_kwargs:
+        try:
+            return value.format(**format_kwargs)
+        except (KeyError, IndexError, ValueError) as exc:
+            logger.warning(
+                "i18n format failed for optional key=%r lang=%r kwargs=%r: %s",
+                key,
+                target,
+                format_kwargs,
+                exc,
+            )
+            return value
+    return value
+
+
 __all__ = [
     "SUPPORTED_LANGUAGES",
     "DEFAULT_LANGUAGE",
+    "translate_or",
     "t",
     "get_language",
     "reset_language_cache",

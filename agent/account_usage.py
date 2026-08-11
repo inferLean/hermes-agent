@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import httpx
 
+from agent.i18n import translate_or
 from agent.anthropic_adapter import _is_oauth_token, resolve_anthropic_token
 from hermes_cli.auth import AuthError, _read_codex_tokens, resolve_codex_runtime_credentials
 from hermes_cli.runtime_provider import resolve_runtime_provider
@@ -74,21 +75,35 @@ def _parse_dt(value: Any) -> Optional[datetime]:
 
 def _format_reset(dt: Optional[datetime]) -> str:
     if not dt:
-        return "unknown"
+        return translate_or(
+            "gateway.command_locale.account.unknown", "unknown"
+        )
     local_dt = dt.astimezone()
     delta = dt - _utc_now()
     total_seconds = int(delta.total_seconds())
     if total_seconds <= 0:
-        return f"now ({local_dt.strftime('%Y-%m-%d %H:%M %Z')})"
+        return translate_or(
+            "gateway.command_locale.account.now",
+            "now ({timestamp})", timestamp=local_dt.strftime('%Y-%m-%d %H:%M %Z'),
+        )
     hours, rem = divmod(total_seconds, 3600)
     minutes = rem // 60
     if hours >= 24:
         days, hours = divmod(hours, 24)
-        rel = f"in {days}d {hours}h"
+        rel = translate_or(
+            "gateway.command_locale.account.in_days",
+            "in {days}d {hours}h", days=days, hours=hours,
+        )
     elif hours > 0:
-        rel = f"in {hours}h {minutes}m"
+        rel = translate_or(
+            "gateway.command_locale.account.in_hours",
+            "in {hours}h {minutes}m", hours=hours, minutes=minutes,
+        )
     else:
-        rel = f"in {minutes}m"
+        rel = translate_or(
+            "gateway.command_locale.account.in_minutes",
+            "in {minutes}m", minutes=minutes,
+        )
     return f"{rel} ({local_dt.strftime('%Y-%m-%d %H:%M %Z')})"
 
 
@@ -98,25 +113,45 @@ def render_account_usage_lines(snapshot: Optional[AccountUsageSnapshot], *, mark
     header = f"📈 {'**' if markdown else ''}{snapshot.title}{'**' if markdown else ''}"
     lines = [header]
     if snapshot.plan:
-        lines.append(f"Provider: {snapshot.provider} ({snapshot.plan})")
+        lines.append(translate_or(
+            "gateway.command_locale.account.provider_plan",
+            "Provider: {provider} ({plan})",
+            provider=snapshot.provider, plan=snapshot.plan,
+        ))
     else:
-        lines.append(f"Provider: {snapshot.provider}")
+        lines.append(translate_or(
+            "gateway.command_locale.account.provider",
+            "Provider: {provider}", provider=snapshot.provider,
+        ))
     for window in snapshot.windows:
         if window.used_percent is None:
-            base = f"{window.label}: unavailable"
+            base = translate_or(
+                "gateway.command_locale.account.unavailable_value",
+                "{label}: unavailable", label=window.label,
+            )
         else:
             remaining = max(0, round(100 - float(window.used_percent)))
             used = max(0, round(float(window.used_percent)))
-            base = f"{window.label}: {remaining}% remaining ({used}% used)"
+            base = translate_or(
+                "gateway.command_locale.account.balance",
+                "{label}: {remaining}% remaining ({used}% used)",
+                label=window.label, remaining=remaining, used=used,
+            )
         if window.reset_at:
-            base += f" • resets {_format_reset(window.reset_at)}"
+            base += translate_or(
+                "gateway.command_locale.account.resets",
+                " • resets {time}", time=_format_reset(window.reset_at),
+            )
         elif window.detail:
             base += f" • {window.detail}"
         lines.append(base)
     for detail in snapshot.details:
         lines.append(detail)
     if snapshot.unavailable_reason:
-        lines.append(f"Unavailable: {snapshot.unavailable_reason}")
+        lines.append(translate_or(
+            "gateway.command_locale.account.unavailable",
+            "Unavailable: {reason}", reason=snapshot.unavailable_reason,
+        ))
     return lines
 
 
@@ -181,47 +216,80 @@ def build_nous_credits_snapshot(account_info) -> Optional[AccountUsageSnapshot]:
                 used_pct = max(0.0, min(100.0, used / monthly_credits * 100.0))
                 windows.append(
                     AccountUsageWindow(
-                        label="Subscription",
+                        label=translate_or(
+                            "gateway.command_locale.account.subscription",
+                            "Subscription",
+                        ),
                         used_percent=used_pct,
-                        detail=f"{_fmt_usd(sub_remaining)} of {_fmt_usd(monthly_credits)} left",
+                        detail=translate_or(
+                            "gateway.command_locale.account.amount_left",
+                            "{remaining} of {total} left",
+                            remaining=_fmt_usd(sub_remaining),
+                            total=_fmt_usd(monthly_credits),
+                        ),
                     )
                 )
 
         if access is not None:
             sub_credits = getattr(access, "subscription_credits_remaining", None)
             if _is_finite_num(sub_credits):
-                details.append(f"Subscription credits: {_fmt_usd(sub_credits)}")
+                details.append(translate_or(
+                    "gateway.command_locale.account.subscription_credits",
+                    "Subscription credits: {amount}", amount=_fmt_usd(sub_credits),
+                ))
             purchased = getattr(access, "purchased_credits_remaining", None)
             if _is_finite_num(purchased):
-                details.append(f"Top-up credits: {_fmt_usd(purchased)}")
+                details.append(translate_or(
+                    "gateway.command_locale.account.topup_credits",
+                    "Top-up credits: {amount}", amount=_fmt_usd(purchased),
+                ))
             total_usable = getattr(access, "total_usable_credits", None)
             if _is_finite_num(total_usable):
-                details.append(f"Total usable: {_fmt_usd(total_usable)}")
+                details.append(translate_or(
+                    "gateway.command_locale.account.total_usable",
+                    "Total usable: {amount}", amount=_fmt_usd(total_usable),
+                ))
 
         if sub is not None:
             rollover = getattr(sub, "rollover_credits", None)
             if _is_finite_num(rollover) and rollover > 0:
-                details.append(f"Rollover: {_fmt_usd(rollover)}")
+                details.append(translate_or(
+                    "gateway.command_locale.account.rollover",
+                    "Rollover: {amount}", amount=_fmt_usd(rollover),
+                ))
             period_end = getattr(sub, "current_period_end", None)
             if period_end:
-                details.append(f"Renews: {period_end}")
+                details.append(translate_or(
+                    "gateway.command_locale.account.renews",
+                    "Renews: {date}", date=period_end,
+                ))
 
         paid = getattr(account_info, "paid_service_access", None)
         if paid is False:
-            details.append("Status: access depleted — top up to restore")
+            details.append(translate_or(
+                "gateway.command_locale.account.depleted",
+                "Status: access depleted — top up to restore",
+            ))
 
         if not windows and not details:
             return None
 
-        details.append(f"Top up: {nous_portal_topup_url(account_info)}")
-        details.append("(or run /topup)")
+        details.append(translate_or(
+            "gateway.command_locale.account.topup_link",
+            "Top up: {url}", url=nous_portal_topup_url(account_info),
+        ))
+        details.append(translate_or(
+            "gateway.command_locale.account.topup_command", "(or run /topup)"
+        ))
 
         plan = getattr(sub, "plan", None) if sub is not None else None
         return AccountUsageSnapshot(
             provider="nous",
             source="portal-account",
             fetched_at=_utc_now(),
-            title="Nous credits",
+            title=translate_or(
+                "gateway.command_locale.account.nous_credits", "Nous credits"
+            ),
             plan=plan,
             windows=tuple(windows),
             details=tuple(details),
@@ -330,7 +398,9 @@ def _snapshot_from_credits_state(state) -> Optional[AccountUsageSnapshot]:
             provider="nous",
             source="dev-fixture",
             fetched_at=_utc_now(),
-            title="Nous credits",
+            title=translate_or(
+                "gateway.command_locale.account.nous_credits", "Nous credits"
+            ),
             windows=tuple(windows),
             details=tuple(details),
         )
@@ -399,12 +469,7 @@ def build_credits_view(*, markdown: bool = False, timeout: float = 10.0) -> Cred
     balance_lines: list[str] = []
     if snapshot is not None:
         rendered = render_account_usage_lines(snapshot, markdown=markdown)
-        balance_lines = [
-            line
-            for line in rendered
-            if not line.lstrip().startswith("Top up:")
-            and not line.lstrip().startswith("(or run")
-        ]
+        balance_lines = rendered[:-2]
 
     # Identity line — shown before any open (roadmap §4.4).
     email = getattr(account, "email", None)
@@ -413,8 +478,14 @@ def build_credits_view(*, markdown: bool = False, timeout: float = 10.0) -> Cred
     if email:
         who.append(str(email))
     if org_name:
-        who.append(f"org {org_name}")
-    identity_line = ("Topping up as " + " / ".join(who)) if who else None
+        who.append(translate_or(
+            "gateway.command_locale.account.organization",
+            "org {name}", name=org_name,
+        ))
+    identity_line = translate_or(
+        "gateway.command_locale.account.identity",
+        "Topping up as {identity}", identity=" / ".join(who),
+    ) if who else None
 
     return CreditsView(
         logged_in=True,

@@ -18,12 +18,18 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+from agent.i18n import translate_or
 from tools import write_approval as wa
 
 
 def _fmt_state(subsystem: str) -> str:
     on = wa.write_approval_enabled(subsystem)
-    return f"{subsystem}.write_approval = {'on' if on else 'off'}"
+    state = translate_or(
+        "gateway.command_locale.write_approval.on" if on
+        else "gateway.command_locale.write_approval.off",
+        "on" if on else "off",
+    )
+    return f"{subsystem}.write_approval = {state}"
 
 
 # ---------------------------------------------------------------------------
@@ -33,17 +39,31 @@ def _fmt_state(subsystem: str) -> str:
 def _fmt_pending_list(subsystem: str) -> str:
     records = wa.list_pending(subsystem)
     if not records:
-        return f"No pending {subsystem} writes."
-    lines = [f"Pending {subsystem} writes ({len(records)}):"]
+        return translate_or(
+            "gateway.command_locale.write_approval.none",
+            "No pending {subsystem} writes.", subsystem=subsystem,
+        )
+    lines = [translate_or(
+        "gateway.command_locale.write_approval.header",
+        "Pending {subsystem} writes ({count}):",
+        subsystem=subsystem, count=len(records),
+    )]
     for r in records:
         origin = r.get("origin", "foreground")
         tag = " [auto]" if origin == "background_review" else ""
         lines.append(f"  {r['id']}{tag}  {r.get('summary', '')}")
     where = "/{s} approve <id>".format(s=subsystem)
     lines.append("")
-    lines.append(f"Apply: {where}   Reject: /{subsystem} reject <id>")
+    lines.append(translate_or(
+        "gateway.command_locale.write_approval.actions",
+        "Apply: {apply}   Reject: /{subsystem} reject <id>",
+        apply=where, subsystem=subsystem,
+    ))
     if subsystem == wa.SKILLS:
-        lines.append("Review full diff: /skills diff <id>")
+        lines.append(translate_or(
+            "gateway.command_locale.write_approval.review_diff",
+            "Review full diff: /skills diff <id>",
+        ))
     return "\n".join(lines)
 
 
@@ -101,7 +121,11 @@ def handle_pending_subcommand(
 
 def _resolve_one(subsystem: str, rest: List[str]):
     if not rest:
-        return None, f"Usage: /{subsystem} approve|reject <id>  (or 'all')"
+        return None, translate_or(
+            "gateway.command_locale.write_approval.resolve_usage",
+            "Usage: /{subsystem} approve|reject <id>  (or 'all')",
+            subsystem=subsystem,
+        )
     return rest[0], None
 
 
@@ -112,14 +136,21 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
 
     records = wa.list_pending(subsystem)
     if not records:
-        return f"No pending {subsystem} writes."
+        return translate_or(
+            "gateway.command_locale.write_approval.none",
+            "No pending {subsystem} writes.", subsystem=subsystem,
+        )
 
     if target.lower() == "all":
         targets = list(records)
     else:
         rec = wa.get_pending(subsystem, target)
         if not rec:
-            return f"No pending {subsystem} write with id '{target}'."
+            return translate_or(
+                "gateway.command_locale.write_approval.not_found",
+                "No pending {subsystem} write with id '{target}'.",
+                subsystem=subsystem, target=target,
+            )
         targets = [rec]
 
     applied, failed = 0, []
@@ -131,9 +162,15 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
         else:
             failed.append(f"{rec['id']}: {msg}")
 
-    out = [f"Approved {applied} {subsystem} write(s)."]
+    out = [translate_or(
+        "gateway.command_locale.write_approval.approved",
+        "Approved {count} {subsystem} write(s).",
+        count=applied, subsystem=subsystem,
+    )]
     if failed:
-        out.append("Failed:")
+        out.append(translate_or(
+            "gateway.command_locale.write_approval.failed_header", "Failed:"
+        ))
         out.extend(f"  {f}" for f in failed)
     return "\n".join(out)
 
@@ -164,20 +201,42 @@ def _reject(subsystem: str, rest: List[str]) -> str:
         for rec in wa.list_pending(subsystem):
             if wa.discard_pending(subsystem, rec["id"]):
                 n += 1
-        return f"Rejected {n} pending {subsystem} write(s)."
+        return translate_or(
+            "gateway.command_locale.write_approval.rejected_many",
+            "Rejected {count} pending {subsystem} write(s).",
+            count=n, subsystem=subsystem,
+        )
     if wa.discard_pending(subsystem, target):
-        return f"Rejected pending {subsystem} write '{target}'."
-    return f"No pending {subsystem} write with id '{target}'."
+        return translate_or(
+            "gateway.command_locale.write_approval.rejected_one",
+            "Rejected pending {subsystem} write '{target}'.",
+            subsystem=subsystem, target=target,
+        )
+    return translate_or(
+        "gateway.command_locale.write_approval.not_found",
+        "No pending {subsystem} write with id '{target}'.",
+        subsystem=subsystem, target=target,
+    )
 
 
 def _diff(rest: List[str]) -> str:
     if not rest:
-        return "Usage: /skills diff <id>"
+        return translate_or(
+            "gateway.command_locale.write_approval.diff_usage",
+            "Usage: /skills diff <id>",
+        )
     rec = wa.get_pending(wa.SKILLS, rest[0])
     if not rec:
-        return f"No pending skill write with id '{rest[0]}'."
+        return translate_or(
+            "gateway.command_locale.write_approval.skill_not_found",
+            "No pending skill write with id '{target}'.", target=rest[0],
+        )
     diff = wa.skill_pending_diff(rec)
-    header = f"# Pending skill write {rec['id']}: {rec.get('summary', '')}\n"
+    header = translate_or(
+        "gateway.command_locale.write_approval.diff_header",
+        "# Pending skill write {target}: {summary}\n",
+        target=rec["id"], summary=rec.get("summary", ""),
+    )
     return header + "\n" + diff
 
 
@@ -187,8 +246,11 @@ def _set_approval(subsystem: str, rest: List[str], set_mode_fn) -> str:
     ``set_mode_fn`` (when provided) persists the new boolean to config.
     """
     if not rest:
-        return (f"{_fmt_state(subsystem)}\n"
-                f"Set with: /{subsystem} approval <on|off>")
+        return translate_or(
+            "gateway.command_locale.write_approval.set_usage",
+            "{state}\nSet with: /{subsystem} approval <on|off>",
+            state=_fmt_state(subsystem), subsystem=subsystem,
+        )
     arg = rest[0].strip().lower()
     truthy = {"on", "true", "yes", "1", "enable", "enabled"}
     falsey = {"off", "false", "no", "0", "disable", "disabled"}
@@ -197,13 +259,33 @@ def _set_approval(subsystem: str, rest: List[str], set_mode_fn) -> str:
     elif arg in falsey:
         enabled = False
     else:
-        return f"Invalid value '{arg}'. Use: on or off."
+        return translate_or(
+            "gateway.command_locale.write_approval.invalid",
+            "Invalid value '{value}'. Use: on or off.", value=arg,
+        )
     if set_mode_fn is None:
         val = "true" if enabled else "false"
-        return (f"To change the {subsystem} approval gate, run:\n"
-                f"  hermes config set {subsystem}.write_approval {val}")
+        return translate_or(
+            "gateway.command_locale.write_approval.cli_set",
+            "To change the {subsystem} approval gate, run:\n"
+            "  hermes config set {subsystem}.write_approval {value}",
+            subsystem=subsystem, value=val,
+        )
     try:
         set_mode_fn(enabled)
     except Exception as e:
-        return f"Failed to set {subsystem}.write_approval: {e}"
-    return f"{subsystem}.write_approval set to '{'on' if enabled else 'off'}'."
+        return translate_or(
+            "gateway.command_locale.write_approval.set_failed",
+            "Failed to set {subsystem}.write_approval: {error}",
+            subsystem=subsystem, error=str(e),
+        )
+    state = translate_or(
+        "gateway.command_locale.write_approval.on" if enabled
+        else "gateway.command_locale.write_approval.off",
+        "on" if enabled else "off",
+    )
+    return translate_or(
+        "gateway.command_locale.write_approval.set",
+        "{subsystem}.write_approval set to '{state}'.",
+        subsystem=subsystem, state=state,
+    )

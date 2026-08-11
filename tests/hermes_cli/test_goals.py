@@ -368,6 +368,24 @@ class TestStatusLineSubgoalCount:
         line = mgr.status_line()
         assert "2 subgoals" in line
 
+    def test_status_line_uses_active_persian_locale(self, hermes_home, monkeypatch):
+        from agent import i18n
+        from hermes_cli.goals import GoalManager
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+        i18n.reset_language_cache()
+        try:
+            mgr = GoalManager(session_id="sl-fa")
+            mgr.set("ارسال نسخه")
+            mgr.add_subgoal("اجرای آزمون‌ها")
+            line = mgr.status_line()
+        finally:
+            i18n.reset_language_cache()
+
+        assert "هدف (فعال" in line
+        assert "۱" not in line  # Numeric identifiers remain machine-readable.
+        assert "Goal (active" not in line
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Wait barrier — parking the goal loop on a background process
@@ -797,4 +815,3 @@ class TestContractAndBackgroundCompose:
         # The judge can return a wait verdict on a contract goal.
         assert verdict == "wait"
         assert wait_directive and wait_directive.get("pid") == 4242
-

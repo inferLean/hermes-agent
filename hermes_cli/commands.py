@@ -538,6 +538,8 @@ def _requires_argument(args_hint: str) -> bool:
 
 def gateway_help_lines() -> list[str]:
     """Generate gateway help text lines from the registry."""
+    from agent.i18n import translate_or
+
     overrides = _resolve_config_gates()
     lines: list[str] = []
     for cmd in COMMAND_REGISTRY:
@@ -550,8 +552,18 @@ def gateway_help_lines() -> list[str]:
             if a.replace("-", "_") == cmd.name.replace("-", "_") and a != cmd.name:
                 continue
             alias_parts.append(f"`/{a}`")
-        alias_note = f" (alias: {', '.join(alias_parts)})" if alias_parts else ""
-        lines.append(f"`/{cmd.name}{args}` -- {cmd.description}{alias_note}")
+        alias_note = ""
+        if alias_parts:
+            alias_note = translate_or(
+                "gateway.command_locale.alias_note",
+                " (alias: {aliases})",
+                aliases=", ".join(alias_parts),
+            )
+        description = translate_or(
+            f"gateway.command_locale.descriptions.{cmd.name}",
+            cmd.description,
+        )
+        lines.append(f"`/{cmd.name}{args}` -- {description}{alias_note}")
     return lines
 
 

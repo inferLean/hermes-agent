@@ -58,7 +58,7 @@ from agent.conversation_compression import (
     PREFLIGHT_COMPRESSION_STATUS_TEMPLATE,
 )
 from agent.conversation_loop import INTERRUPT_WAITING_FOR_MODEL_PREFIX
-from agent.i18n import t
+from agent.i18n import t, translate_or
 from agent.interrupt_compat import request_hard_interrupt
 from hermes_cli.config import cfg_get
 from hermes_cli.fallback_config import get_fallback_chain
@@ -2971,9 +2971,11 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                 # disabled is keyed by the declared frontmatter name (what
                 # skills.disabled / skills.platform_disabled store).
                 if slug == normalized and declared_name in disabled:
-                    return (
-                        f"The **{command_name}** skill is installed but disabled.\n"
-                        f"Enable it with: `hermes skills config`"
+                    return translate_or(
+                        "gateway.command_locale.skill.disabled",
+                        "The **{name}** skill is installed but disabled.\n"
+                        "Enable it with: `hermes skills config`",
+                        name=command_name,
                     )
 
         # Check optional skills (shipped with repo but not installed)
@@ -2992,9 +2994,11 @@ def _check_unavailable_skill(command_name: str) -> str | None:
                     rel = skill_md.parent.relative_to(optional_dir)
                     parts = list(rel.parts)
                     install_path = f"official/{'/'.join(parts)}"
-                    return (
-                        f"The **{command_name}** skill is available but not installed.\n"
-                        f"Install it with: `hermes skills install {install_path}`"
+                    return translate_or(
+                        "gateway.command_locale.skill.not_installed",
+                        "The **{name}** skill is available but not installed.\n"
+                        "Install it with: `hermes skills install {path}`",
+                        name=command_name, path=install_path,
                     )
     except Exception:
         pass
@@ -13969,11 +13973,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     # Command-specific mid-run reject texts (busy_policy == "reject" with a
     # busy_handler naming an entry here). All other rejected commands get
     # the generic catch-all text in _dispatch_busy_slash_command.
-    _BUSY_REJECT_TEXT: Dict[str, str] = {
-        "model": "Agent is running — wait or /stop first, then switch models.",
-        "codex-runtime": ("Agent is running — wait or /stop first, then "
-                          "change runtime."),
-        "moa": "Agent is running — wait or /stop first, then run /moa.",
+    _BUSY_REJECT_TEXT: Dict[str, tuple[str, str]] = {
+        "model": (
+            "gateway.command_locale.busy.model",
+            "Agent is running — wait or /stop first, then switch models.",
+        ),
+        "codex-runtime": (
+            "gateway.command_locale.busy.codex_runtime",
+            "Agent is running — wait or /stop first, then change runtime.",
+        ),
+        "moa": (
+            "gateway.command_locale.busy.moa",
+            "Agent is running — wait or /stop first, then run /moa.",
+        ),
     }
 
     async def _dispatch_busy_slash_command(
@@ -14010,9 +14022,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             }.get(handler_key)
             if special is not None:
                 return await special(event, quick_key, source)
-            reject_text = self._BUSY_REJECT_TEXT.get(handler_key)
-            if reject_text is not None:
-                return reject_text
+            reject_message = self._BUSY_REJECT_TEXT.get(handler_key)
+            if reject_message is not None:
+                key, default = reject_message
+                return translate_or(key, default)
 
         if policy in ("dispatch", "interrupt_then_dispatch"):
             plain = {
@@ -14044,9 +14057,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Catch-all: any other recognized slash command reached the
         # running-agent guard. Reject gracefully rather than falling
         # through to interrupt + discard.
-        return (
-            f"⏳ Agent is running — `/{name}` can't run "
-            f"mid-turn. Wait for the current response or `/stop` first."
+        return translate_or(
+            "gateway.command_locale.busy.generic",
+            "⏳ Agent is running — `/{command}` can't run mid-turn. "
+            "Wait for the current response or `/stop` first.",
+            command=name,
         )
 
     async def _busy_start_command(self, event: MessageEvent, quick_key: str, source):
@@ -14107,7 +14122,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # fields silently lost the attachment when the queued turn ran.
         has_media = bool(getattr(event, "media_urls", None))
         if not queued_text and not has_media:
-            return "Usage: /queue <prompt>"
+            return translate_or(
+                "gateway.command_locale.queue.usage", "Usage: /queue <prompt>"
+            )
         adapter = self._adapter_for_source(source)
         if adapter:
             queued_event = MessageEvent(
@@ -14132,8 +14149,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             self._enqueue_fifo(quick_key, queued_event, adapter)
         depth = self._queue_depth(quick_key, adapter=self._adapter_for_source(source))
         if depth <= 1:
-            return "Queued for the next turn."
-        return f"Queued for the next turn. ({depth} queued)"
+            return translate_or(
+                "gateway.command_locale.queue.queued_one",
+                "Queued for the next turn.",
+            )
+        return translate_or(
+            "gateway.command_locale.queue.queued_many",
+            "Queued for the next turn. ({depth} queued)",
+            depth=depth,
+        )
 
     async def _busy_steer_command(self, event: MessageEvent, quick_key: str, source):
         # /steer <prompt> — inject mid-run after the next tool call.
@@ -14143,7 +14167,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # no role-alternation violation.
         steer_text = event.get_command_args().strip()
         if not steer_text:
-            return "Usage: /steer <prompt>"
+            return translate_or(
+                "gateway.command_locale.steer.usage", "Usage: /steer <prompt>"
+            )
         _steer_state = self._peek_session_state(quick_key)
         running_agent = _steer_state.turn.agent if _steer_state else None
         if running_agent is _AGENT_PENDING_SENTINEL:
@@ -14159,17 +14185,31 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     channel_context=event.channel_context,
                 )
                 self._enqueue_fifo(quick_key, queued_event, adapter)
-            return "Agent still starting — /steer queued for the next turn."
+            return translate_or(
+                "gateway.command_locale.steer.starting",
+                "Agent still starting — /steer queued for the next turn.",
+            )
         if running_agent and hasattr(running_agent, "steer"):
             try:
                 accepted = running_agent.steer(steer_text)
             except Exception as exc:
                 logger.warning("Steer failed for session %s: %s", quick_key, exc)
-                return f"⚠️ Steer failed: {exc}"
+                return translate_or(
+                    "gateway.command_locale.steer.failed",
+                    "⚠️ Steer failed: {error}",
+                    error=str(exc),
+                )
             if accepted:
                 preview = steer_text[:60] + ("..." if len(steer_text) > 60 else "")
-                return f"⏩ Steer queued — arrives after the next tool call: '{preview}'"
-            return "Steer rejected (empty payload)."
+                return translate_or(
+                    "gateway.command_locale.steer.accepted",
+                    "⏩ Steer queued — arrives after the next tool call: '{preview}'",
+                    preview=preview,
+                )
+            return translate_or(
+                "gateway.command_locale.steer.rejected",
+                "Steer rejected (empty payload).",
+            )
         # Running agent is missing or lacks steer() — fall back to queue.
         adapter = self._adapter_for_source(source)
         if adapter:
@@ -14182,7 +14222,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 channel_context=event.channel_context,
             )
             self._enqueue_fifo(quick_key, queued_event, adapter)
-        return "No active agent — /steer queued for the next turn."
+        return translate_or(
+            "gateway.command_locale.steer.no_active",
+            "No active agent — /steer queued for the next turn.",
+        )
 
     async def _busy_goal_command(self, event: MessageEvent, quick_key: str, source):
         # /goal is safe mid-run for status/pause/clear/wait (inspection
@@ -14201,7 +14244,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         if _is_control:
             return await self._handle_goal_command(event)
-        return "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
+        return translate_or(
+            "gateway.command_locale.goal.busy",
+            "Agent is running — use /goal status / pause / clear / wait mid-run, "
+            "or /stop before setting a new goal.",
+        )
 
     async def _handle_message(self, event: MessageEvent) -> Optional[str]:
         """
@@ -15206,7 +15253,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "queue":
             queue_payload = event.get_command_args().strip()
             if not queue_payload:
-                return "Usage: /queue <prompt>"
+                return translate_or(
+                    "gateway.command_locale.queue.usage", "Usage: /queue <prompt>"
+                )
             try:
                 event.text = queue_payload
             except Exception:
@@ -15218,7 +15267,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # message. If the payload is empty, surface the usage hint.
             steer_payload = event.get_command_args().strip()
             if not steer_payload:
-                return "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
+                return translate_or(
+                    "gateway.command_locale.steer.idle_usage",
+                    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)",
+                )
             try:
                 event.text = steer_payload
             except Exception:
@@ -15264,7 +15316,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 self._evict_cached_agent(_quick_key)
                 event._moa_disable_after_turn = True
             except Exception:
-                return "Failed to prepare MoA turn."
+                return translate_or(
+                    "gateway.command_locale.moa.prepare_failed",
+                    "Failed to prepare MoA turn.",
+                )
 
         if canonical == "subgoal":
             return await self._handle_subgoal_command(event)
@@ -15273,7 +15328,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return await self._handle_voice_command(event)
 
         if self._draining:
-            return f"⏳ Gateway is {self._status_action_gerund()} and is not accepting new work right now."
+            return translate_or(
+                "gateway.command_locale.gateway_busy",
+                "⏳ Gateway is changing state and is not accepting new work right now.",
+            )
 
         # User-defined quick commands (bypass agent loop, no LLM call)
         if command:
@@ -15316,13 +15374,26 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             if output:
                                 from agent.redact import redact_sensitive_text
                                 output = redact_sensitive_text(output)
-                            return output if output else "Command returned no output."
+                            return output if output else translate_or(
+                                "gateway.command_locale.quick.no_output",
+                                "Command returned no output.",
+                            )
                         except asyncio.TimeoutError:
-                            return "Quick command timed out (30s)."
+                            return translate_or(
+                                "gateway.command_locale.quick.timeout",
+                                "Quick command timed out (30s).",
+                            )
                         except Exception as e:
-                            return f"Quick command error: {e}"
+                            return translate_or(
+                                "gateway.command_locale.quick.error",
+                                "Quick command error: {error}", error=str(e),
+                            )
                     else:
-                        return f"Quick command '/{command}' has no command defined."
+                        return translate_or(
+                            "gateway.command_locale.quick.no_command",
+                            "Quick command '/{command}' has no command defined.",
+                            command=command,
+                        )
                 elif qcmd.get("type") == "alias":
                     target = (qcmd.get("target") or "").strip()
                     if target:
@@ -15333,9 +15404,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         command = target_command.split()[0] if target_command else target_command
                         # Fall through to normal command dispatch below
                     else:
-                        return f"Quick command '/{command}' has no target defined."
+                        return translate_or(
+                            "gateway.command_locale.quick.no_target",
+                            "Quick command '/{command}' has no target defined.",
+                            command=command,
+                        )
                 else:
-                    return f"Quick command '/{command}' has unsupported type (supported: 'exec', 'alias')."
+                    return translate_or(
+                        "gateway.command_locale.quick.unsupported",
+                        "Quick command '/{command}' has unsupported type "
+                        "(supported: 'exec', 'alias').",
+                        command=command,
+                    )
 
         # Plugin-registered slash commands
         if command:
@@ -15412,9 +15492,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if _plat and _skill_name:
                         from agent.skill_utils import get_disabled_skill_names as _get_plat_disabled
                         if _skill_name in _get_plat_disabled(platform=_plat):
-                            return (
-                                f"The **{_skill_name}** skill is disabled for {_plat}.\n"
-                                f"Enable it with: `hermes skills config`"
+                            return translate_or(
+                                "gateway.command_locale.skill.platform_disabled",
+                                "The **{name}** skill is disabled for {platform}.\n"
+                                "Enable it with: `hermes skills config`",
+                                name=_skill_name, platform=_plat,
                             )
                     user_instruction = event.get_command_args().strip()
                     # Stacked slash-skill invocations: `/skill-a /skill-b do
@@ -15447,10 +15529,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             if skill_cmds.get(k, {}).get("name", "") in _plat_disabled
                         ]
                         if _disabled_extra:
-                            return (
-                                f"The **{', '.join(_disabled_extra)}** skill(s) in this "
-                                f"stacked invocation are disabled for {_plat}.\n"
-                                f"Enable them with: `hermes skills config`"
+                            return translate_or(
+                                "gateway.command_locale.skill.stack_disabled",
+                                "The **{names}** skill(s) in this stacked invocation "
+                                "are disabled for {platform}.\n"
+                                "Enable them with: `hermes skills config`",
+                                names=", ".join(_disabled_extra), platform=_plat,
                             )
                     if extra_keys and _build_stacked is not None:
                         stacked_result = _build_stacked(
@@ -15463,7 +15547,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             event.text = msg
                             # Fall through to normal message processing
                         else:
-                            return f"Failed to load stacked skills for /{command}."
+                            return translate_or(
+                                "gateway.command_locale.skill.stack_failed",
+                                "Failed to load stacked skills for /{command}.",
+                                command=command,
+                            )
                     else:
                         msg = build_skill_invocation_message(
                             cmd_key, user_instruction, task_id=_quick_key
@@ -15492,11 +15580,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             command,
                             source.platform.value if source.platform else "?",
                         )
-                        return (
-                            f"Unknown command `/{command}`. "
-                            f"Type /commands to see what's available, "
-                            f"or resend without the leading slash to send "
-                            f"as a regular message."
+                        return translate_or(
+                            "gateway.command_locale.unknown_command",
+                            "Unknown command `/{command}`. Type /commands to see what's "
+                            "available, or resend without the leading slash to send as a "
+                            "regular message.",
+                            command=command,
                         )
             except Exception as e:
                 logger.debug("Skill command check failed (non-fatal): %s", e)
@@ -18241,11 +18330,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         # Format context source hint
         if config_context_length is not None:
-            ctx_source = "config"
+            ctx_source = translate_or(
+                "gateway.command_locale.session_info.source_config",
+                "config",
+            )
         elif context_length == DEFAULT_FALLBACK_CONTEXT:
-            ctx_source = "default — set model.context_length in config to override"
+            ctx_source = translate_or(
+                "gateway.command_locale.session_info.source_default",
+                "default — set model.context_length in config to override",
+            )
         else:
-            ctx_source = "detected"
+            ctx_source = translate_or(
+                "gateway.command_locale.session_info.source_detected",
+                "detected",
+            )
 
         # Format context length for display
         if context_length >= 1_000_000:
@@ -18256,14 +18354,37 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             ctx_display = str(context_length)
 
         lines = [
-            f"◆ Model: `{model}`",
-            f"◆ Provider: {provider or 'openrouter'}",
-            f"◆ Context: {ctx_display} tokens ({ctx_source})",
+            "◆ "
+            + translate_or(
+                "gateway.command_locale.session_info.model",
+                "Model: `{model}`",
+                model=model,
+            ),
+            "◆ "
+            + translate_or(
+                "gateway.command_locale.session_info.provider",
+                "Provider: {provider}",
+                provider=provider or "openrouter",
+            ),
+            "◆ "
+            + translate_or(
+                "gateway.command_locale.session_info.context",
+                "Context: {context} tokens ({source})",
+                context=ctx_display,
+                source=ctx_source,
+            ),
         ]
 
         # Show endpoint for local/custom setups
         if base_url and ("localhost" in base_url or "127.0.0.1" in base_url or "0.0.0.0" in base_url):
-            lines.append(f"◆ Endpoint: {base_url}")
+            lines.append(
+                "◆ "
+                + translate_or(
+                    "gateway.command_locale.session_info.endpoint",
+                    "Endpoint: {endpoint}",
+                    endpoint=base_url,
+                )
+            )
 
         return "\n".join(lines)
 
@@ -18298,19 +18419,27 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         allowed_preview = sorted(policy.user_allowed_commands)
         if allowed_preview:
-            suffix = (
-                "You can run: "
-                + ", ".join(f"/{c}" for c in allowed_preview[:12])
-                + ("…" if len(allowed_preview) > 12 else "")
-                + ". Use /whoami for the full list."
+            suffix = translate_or(
+                "gateway.command_locale.access.allowed",
+                "You can run: {commands}. Use /whoami for the full list.",
+                commands=(
+                    ", ".join(f"/{c}" for c in allowed_preview[:12])
+                    + ("…" if len(allowed_preview) > 12 else "")
+                ),
             )
         else:
-            suffix = (
-                "No slash commands are enabled for non-admins on this "
-                "platform. Ask an admin to add you to allow_admin_from "
-                "or to set user_allowed_commands."
+            suffix = translate_or(
+                "gateway.command_locale.access.none",
+                "No slash commands are enabled for non-admins on this platform. "
+                "Ask an admin to add you to allow_admin_from or to set "
+                "user_allowed_commands.",
             )
-        return f"⛔ /{canonical_cmd} is admin-only here. {suffix}"
+        return translate_or(
+            "gateway.command_locale.access.denied",
+            "⛔ /{command} is admin-only here. {suffix}",
+            command=canonical_cmd,
+            suffix=suffix,
+        )
 
 
 
@@ -18477,7 +18606,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return handle_suggestions_command(args, origin=origin, surface="gateway")
         except Exception as e:
             logger.debug("suggestions command failed: %s", e)
-            return f"Suggestions command failed: {e}"
+            return translate_or(
+                "gateway.command_locale.suggestions.failed",
+                "Suggestions command failed: {error}", error=str(e),
+            )
 
     async def _handle_blueprint_command(self, event: MessageEvent):
         """Handle /blueprint in the gateway.
@@ -18512,7 +18644,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             logger.debug("blueprint command failed: %s", e)
             from hermes_cli.blueprint_cmd import BlueprintCommandResult
 
-            return BlueprintCommandResult(f"Cron blueprint command failed: {e}")
+            return BlueprintCommandResult(translate_or(
+                "gateway.command_locale.blueprint.failed",
+                "Cron blueprint command failed: {error}", error=str(e),
+            ))
 
     # ────────────────────────────────────────────────────────────────
     # /goal — persistent cross-turn goals (Ralph-style loop)

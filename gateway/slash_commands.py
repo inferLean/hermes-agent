@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from agent.account_usage import fetch_account_usage, render_account_usage_lines
-from agent.i18n import t
+from agent.i18n import get_language, t, translate_or
 from agent.turn_context import extract_api_content_sidecar
 from gateway.config import HomeChannel, Platform, PlatformConfig, persist_home_channel
 from gateway.platforms.base import EphemeralReply, MessageEvent, MessageType
@@ -315,11 +315,13 @@ class GatewaySlashCommandsMixin:
             pass
 
         # Append a random tip to the reset message
-        try:
-            from hermes_cli.tips import get_random_tip
-            _tip_line = t("gateway.reset.tip", tip=get_random_tip())
-        except Exception:
-            _tip_line = ""
+        _tip_line = ""
+        if get_language() == "en":
+            try:
+                from hermes_cli.tips import get_random_tip
+                _tip_line = t("gateway.reset.tip", tip=get_random_tip())
+            except Exception:
+                pass
 
         if session_info:
             return EphemeralReply(f"{header}\n\n{session_info}{_tip_line}")
@@ -392,23 +394,37 @@ class GatewaySlashCommandsMixin:
         policy = _policy_for_source(self.config, source)
         platform = source.platform.value if source and source.platform else "?"
         chat_type = (source.chat_type if source else "") or "dm"
-        scope = "DM" if chat_type.lower() in {"dm", "direct", "private", ""} else "group/channel"
+        scope = translate_or(
+            "gateway.command_locale.whoami.scope_dm",
+            "DM",
+        ) if chat_type.lower() in {"dm", "direct", "private", ""} else translate_or(
+            "gateway.command_locale.whoami.scope_group",
+            "group/channel",
+        )
         user_id = (source.user_id if source else None) or "?"
 
         if not policy.enabled:
-            return (
-                f"**You** — {platform} ({scope})\n"
-                f"User ID: `{user_id}`\n"
-                f"Tier: unrestricted (no admin list configured for this scope)\n"
-                f"Slash commands: all available"
+            return translate_or(
+                "gateway.command_locale.whoami.unrestricted",
+                "**You** — {platform} ({scope})\n"
+                "User ID: `{user_id}`\n"
+                "Tier: unrestricted (no admin list configured for this scope)\n"
+                "Slash commands: all available",
+                platform=platform,
+                scope=scope,
+                user_id=user_id,
             )
 
         if policy.is_admin(user_id):
-            return (
-                f"**You** — {platform} ({scope})\n"
-                f"User ID: `{user_id}`\n"
-                f"Tier: **admin**\n"
-                f"Slash commands: all available"
+            return translate_or(
+                "gateway.command_locale.whoami.admin",
+                "**You** — {platform} ({scope})\n"
+                "User ID: `{user_id}`\n"
+                "Tier: **admin**\n"
+                "Slash commands: all available",
+                platform=platform,
+                scope=scope,
+                user_id=user_id,
             )
 
         # Non-admin user. Show what's actually reachable.
@@ -421,12 +437,20 @@ class GatewaySlashCommandsMixin:
             if c not in seen:
                 seen.add(c)
                 runnable.append(c)
-        runnable_str = ", ".join(f"/{c}" for c in runnable) if runnable else "(none)"
-        return (
-            f"**You** — {platform} ({scope})\n"
-            f"User ID: `{user_id}`\n"
-            f"Tier: user\n"
-            f"Slash commands you can run: {runnable_str}"
+        runnable_str = ", ".join(f"/{c}" for c in runnable) if runnable else translate_or(
+            "gateway.command_locale.none",
+            "(none)",
+        )
+        return translate_or(
+            "gateway.command_locale.whoami.user",
+            "**You** — {platform} ({scope})\n"
+            "User ID: `{user_id}`\n"
+            "Tier: user\n"
+            "Slash commands you can run: {commands}",
+            platform=platform,
+            scope=scope,
+            user_id=user_id,
+            commands=runnable_str,
         )
 
     async def _handle_kanban_command(self, event: MessageEvent) -> str:
@@ -1455,70 +1479,124 @@ class GatewaySlashCommandsMixin:
             return None
 
         if action == "list":
-            lines = ["**Gateway platforms**"]
+            lines = [
+                translate_or(
+                    "gateway.command_locale.platform.header",
+                    "**Gateway platforms**",
+                )
+            ]
             connected = sorted(p.value for p in self.adapters.keys())
             if connected:
-                lines.append("Connected: " + ", ".join(connected))
+                lines.append(
+                    translate_or(
+                        "gateway.command_locale.platform.connected",
+                        "Connected: {platforms}",
+                        platforms=", ".join(connected),
+                    )
+                )
             else:
-                lines.append("Connected: (none)")
+                lines.append(
+                    translate_or(
+                        "gateway.command_locale.platform.connected_none",
+                        "Connected: (none)",
+                    )
+                )
             failed = getattr(self, "_failed_platforms", {}) or {}
             if failed:
                 for p, info in failed.items():
                     if info.get("paused"):
                         reason = info.get("pause_reason") or "paused"
                         lines.append(
-                            f"  · {p.value} — PAUSED ({reason}). "
-                            f"Resume with `/platform resume {p.value}`."
+                            translate_or(
+                                "gateway.command_locale.platform.paused_item",
+                                "  · {platform} — PAUSED ({reason}). "
+                                "Resume with `/platform resume {platform}`.",
+                                platform=p.value,
+                                reason=reason,
+                            )
                         )
                     else:
                         attempts = info.get("attempts", 0)
                         lines.append(
-                            f"  · {p.value} — retrying (attempt {attempts})"
+                            translate_or(
+                                "gateway.command_locale.platform.retrying_item",
+                                "  · {platform} — retrying (attempt {attempts})",
+                                platform=p.value,
+                                attempts=attempts,
+                            )
                         )
             else:
-                lines.append("Failed/paused: (none)")
+                lines.append(
+                    translate_or(
+                        "gateway.command_locale.platform.failed_none",
+                        "Failed/paused: (none)",
+                    )
+                )
             return "\n".join(lines)
 
         if action in {"pause", "resume"}:
             if not target:
-                return f"Usage: /platform {action} <name>"
+                return translate_or(
+                    "gateway.command_locale.platform.action_usage",
+                    "Usage: /platform {action} <name>",
+                    action=action,
+                )
             platform = _resolve_platform(target)
             if platform is None:
-                return f"Unknown platform: {target}"
+                return translate_or(
+                    "gateway.command_locale.platform.unknown",
+                    "Unknown platform: {platform}",
+                    platform=target,
+                )
             failed = getattr(self, "_failed_platforms", {}) or {}
             if action == "pause":
                 if platform not in failed:
-                    return (
-                        f"{platform.value} is not in the retry queue "
-                        f"(it's either connected or not enabled)."
+                    return translate_or(
+                        "gateway.command_locale.platform.not_queued",
+                        "{platform} is not in the retry queue "
+                        "(it's either connected or not enabled).",
+                        platform=platform.value,
                     )
                 if failed[platform].get("paused"):
-                    return f"{platform.value} is already paused."
+                    return translate_or(
+                        "gateway.command_locale.platform.already_paused",
+                        "{platform} is already paused.",
+                        platform=platform.value,
+                    )
                 self._pause_failed_platform(platform, reason="paused via /platform pause")
-                return (
-                    f"✓ {platform.value} paused. "
-                    f"Resume with `/platform resume {platform.value}` or "
-                    f"`hermes gateway restart` to reset."
+                return translate_or(
+                    "gateway.command_locale.platform.paused",
+                    "✓ {platform} paused. "
+                    "Resume with `/platform resume {platform}` or "
+                    "`hermes gateway restart` to reset.",
+                    platform=platform.value,
                 )
             # action == "resume"
             if platform not in failed:
-                return (
-                    f"{platform.value} is not in the retry queue — "
-                    f"nothing to resume."
+                return translate_or(
+                    "gateway.command_locale.platform.nothing_to_resume",
+                    "{platform} is not in the retry queue — nothing to resume.",
+                    platform=platform.value,
                 )
             if not failed[platform].get("paused"):
-                return (
-                    f"{platform.value} is already retrying — "
-                    f"no resume needed."
+                return translate_or(
+                    "gateway.command_locale.platform.already_retrying",
+                    "{platform} is already retrying — no resume needed.",
+                    platform=platform.value,
                 )
             self._resume_paused_platform(platform)
-            return f"✓ {platform.value} resumed — retrying on next watcher tick."
+            return translate_or(
+                "gateway.command_locale.platform.resumed",
+                "✓ {platform} resumed — retrying on next watcher tick.",
+                platform=platform.value,
+            )
 
-        return (
+        return translate_or(
+            "gateway.command_locale.platform.usage",
             "Usage: /platform <list|pause|resume> [name]\n"
             "  /platform list — show platform status\n"
             "  /platform pause <name> — stop retrying a failing platform\n"
-            "  /platform resume <name> — re-queue a paused platform"
+            "  /platform resume <name> — re-queue a paused platform",
         )
 
     async def _handle_restart_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
@@ -1708,7 +1786,10 @@ class GatewaySlashCommandsMixin:
         one_turn = request.is_once
         if request.errors:
             # Gateway decoration: "❌ " prefix over the canonical error copy.
-            return f"❌ {request.error_messages()[0]}"
+            return translate_or(
+                "gateway.command_locale.model.error",
+                "❌ {error}", error=request.error_messages()[0],
+            )
         persist_global = resolve_persist_behavior(
             is_global_flag,
             is_session,
@@ -2391,7 +2472,10 @@ class GatewaySlashCommandsMixin:
             if persist_global:
                 lines.append(t("gateway.model.saved_global"))
             elif one_turn:
-                lines.append("    (next turn only — restores after one response)")
+                lines.append(translate_or(
+                    "gateway.command_locale.model.next_turn_only",
+                    "    (next turn only — restores after one response)",
+                ))
             else:
                 lines.append(t("gateway.model.session_only_hint"))
 
@@ -2420,9 +2504,12 @@ class GatewaySlashCommandsMixin:
         if _cost_warning is not None:
             async def _on_cost_confirm(choice: str) -> str:
                 if choice == "cancel":
-                    return (
-                        f"🟡 Model switch cancelled. Current model unchanged "
-                        f"({current_model or 'unknown'})."
+                    return translate_or(
+                        "gateway.command_locale.model.cancelled",
+                        "🟡 Model switch cancelled. Current model unchanged ({model}).",
+                        model=current_model or translate_or(
+                            "gateway.command_locale.model.unknown", "unknown"
+                        ),
                     )
                 # "once" and "always" both proceed — there is no persistent
                 # opt-out for the cost guard (each expensive switch should be
@@ -2433,11 +2520,18 @@ class GatewaySlashCommandsMixin:
             return await self._request_slash_confirm(
                 event=event,
                 command="model",
-                title="Expensive Model Warning",
-                message=(
-                    f"⚠️ **Expensive Model Warning**\n\n{_cost_warning.message}\n\n"
-                    f"_Text fallback: reply `{_p}approve` to switch or `{_p}cancel` to keep "
-                    "the current model._"
+                title=translate_or(
+                    "gateway.command_locale.model.expensive_title",
+                    "Expensive Model Warning",
+                ),
+                message=translate_or(
+                    "gateway.command_locale.model.expensive_message",
+                    "⚠️ **Expensive Model Warning**\n\n{warning}\n\n"
+                    "_Text fallback: reply `{approve}` to switch or `{cancel}` "
+                    "to keep the current model._",
+                    warning=_cost_warning.message,
+                    approve=f"{_p}approve",
+                    cancel=f"{_p}cancel",
                 ),
                 handler=_on_cost_confirm,
             )
@@ -2467,7 +2561,10 @@ class GatewaySlashCommandsMixin:
         try:
             from hermes_cli.config import load_config, save_config
         except Exception as exc:
-            return f"❌ Could not load config: {exc}"
+            return translate_or(
+                "gateway.command_locale.codex_runtime.config_failed",
+                "❌ Could not load config: {error}", error=str(exc),
+            )
         cfg = load_config()
 
         result = crs.apply(
@@ -2660,25 +2757,44 @@ class GatewaySlashCommandsMixin:
         if lower == "wait" or lower.startswith("wait "):
             wait_arg = args[len("wait"):].strip()
             if not wait_arg:
-                return "Usage: /goal wait <pid> [reason]"
+                return translate_or(
+                    "gateway.command_locale.goal.wait_usage",
+                    "Usage: /goal wait <pid> [reason]",
+                )
             wtokens = wait_arg.split(None, 1)
             try:
                 pid = int(wtokens[0])
             except ValueError:
-                return "/goal wait: <pid> must be an integer process id."
+                return translate_or(
+                    "gateway.command_locale.goal.wait_pid_integer",
+                    "/goal wait: <pid> must be an integer process id.",
+                )
             reason = wtokens[1].strip() if len(wtokens) > 1 else ""
             try:
                 mgr.wait_on(pid, reason=reason)
             except (RuntimeError, ValueError) as exc:
-                return f"/goal wait: {exc}"
+                return translate_or(
+                    "gateway.command_locale.goal.wait_failed",
+                    "/goal wait: {error}", error=str(exc),
+                )
             rtxt = f" ({reason})" if reason else ""
-            return f"⏳ Goal parked on pid {pid}{rtxt}. Loop pauses until it exits."
+            return translate_or(
+                "gateway.command_locale.goal.wait_set",
+                "⏳ Goal parked on pid {pid}{reason}. Loop pauses until it exits.",
+                pid=pid, reason=rtxt,
+            )
 
         # /goal unwait — clear the wait barrier.
         if lower == "unwait":
             if mgr.stop_waiting():
-                return "▶ Wait barrier cleared — goal loop resumes."
-            return "No wait barrier set."
+                return translate_or(
+                    "gateway.command_locale.goal.wait_cleared",
+                    "▶ Wait barrier cleared — goal loop resumes.",
+                )
+            return translate_or(
+                "gateway.command_locale.goal.no_wait",
+                "No wait barrier set.",
+            )
 
         # /goal draft <objective> → draft a structured completion contract,
         # then set it. The aux LLM call is sync; run it off the event loop.
@@ -2686,7 +2802,10 @@ class GatewaySlashCommandsMixin:
         if lower.startswith("draft"):
             objective = args[len("draft"):].strip()
             if not objective:
-                return "Usage: /goal draft <objective in plain language>"
+                return translate_or(
+                    "gateway.command_locale.goal.draft_usage",
+                    "Usage: /goal draft <objective in plain language>",
+                )
             try:
                 import asyncio
                 from hermes_cli.goals import draft_contract
@@ -2734,10 +2853,18 @@ class GatewaySlashCommandsMixin:
 
         base = t("gateway.goal.set", budget=state.max_turns, goal=state.goal)
         if state.has_contract():
-            return f"{base}\nCompletion contract:\n{state.contract.render_block()}"
+            return translate_or(
+                "gateway.command_locale.goal.contract",
+                "{base}\nCompletion contract:\n{contract}",
+                base=base, contract=state.contract.render_block(),
+            )
         if lower.startswith("draft"):
             # Drafting was requested but the aux model couldn't produce one.
-            return f"{base}\n(Couldn't draft a contract — running as a free-form goal.)"
+            return translate_or(
+                "gateway.command_locale.goal.draft_failed",
+                "{base}\n(Couldn't draft a contract — running as a free-form goal.)",
+                base=base,
+            )
         return base
 
     async def _handle_subgoal_command(self, event: "MessageEvent") -> str:
@@ -2752,7 +2879,10 @@ class GatewaySlashCommandsMixin:
         if mgr is None:
             return t("gateway.goal.unavailable")
         if not mgr.has_goal():
-            return "No active goal. Set one with /goal <text>."
+            return translate_or(
+                "gateway.command_locale.goal.no_active",
+                "No active goal. Set one with /goal <text>.",
+            )
 
         # No args → list current subgoals.
         if not args:
@@ -2764,32 +2894,58 @@ class GatewaySlashCommandsMixin:
 
         if verb == "remove":
             if not rest:
-                return "Usage: /subgoal remove <n>"
+                return translate_or(
+                    "gateway.command_locale.subgoal.remove_usage",
+                    "Usage: /subgoal remove <n>",
+                )
             try:
                 idx = int(rest.split()[0])
             except ValueError:
-                return "/subgoal remove: <n> must be an integer (1-based index)."
+                return translate_or(
+                    "gateway.command_locale.subgoal.remove_integer",
+                    "/subgoal remove: <n> must be an integer (1-based index).",
+                )
             try:
                 removed = mgr.remove_subgoal(idx)
             except (IndexError, RuntimeError) as exc:
-                return f"/subgoal remove: {exc}"
-            return f"✓ Removed subgoal {idx}: {removed}"
+                return translate_or(
+                    "gateway.command_locale.subgoal.remove_failed",
+                    "/subgoal remove: {error}", error=str(exc),
+                )
+            return translate_or(
+                "gateway.command_locale.subgoal.removed",
+                "✓ Removed subgoal {index}: {text}", index=idx, text=removed,
+            )
 
         if verb == "clear":
             try:
                 prev = mgr.clear_subgoals()
             except RuntimeError as exc:
-                return f"/subgoal clear: {exc}"
+                return translate_or(
+                    "gateway.command_locale.subgoal.clear_failed",
+                    "/subgoal clear: {error}", error=str(exc),
+                )
             if prev:
-                return f"✓ Cleared {prev} subgoal{'s' if prev != 1 else ''}."
-            return "No subgoals to clear."
+                return translate_or(
+                    "gateway.command_locale.subgoal.cleared",
+                    "✓ Cleared {count} subgoal(s).", count=prev,
+                )
+            return translate_or(
+                "gateway.command_locale.subgoal.none", "No subgoals to clear."
+            )
 
         try:
             text = mgr.add_subgoal(args)
         except (ValueError, RuntimeError) as exc:
-            return f"/subgoal: {exc}"
+            return translate_or(
+                "gateway.command_locale.subgoal.add_failed",
+                "/subgoal: {error}", error=str(exc),
+            )
         idx = len(mgr.state.subgoals) if mgr.state else 0
-        return f"✓ Added subgoal {idx}: {text}"
+        return translate_or(
+            "gateway.command_locale.subgoal.added",
+            "✓ Added subgoal {index}: {text}", index=idx, text=text,
+        )
 
     async def _handle_undo_command(self, event: MessageEvent) -> str:
         """Handle /undo [N] — back up N user turns (default 1), soft-deleting
@@ -3463,8 +3619,11 @@ class GatewaySlashCommandsMixin:
             wa.MEMORY, args, memory_store=store, set_mode_fn=_set_approval,
         )
         if out is None:
-            out = ("Unknown /memory subcommand. Use: pending, approve <id>, "
-                   "reject <id>, approval <on|off>.")
+            out = translate_or(
+                "gateway.command_locale.memory.unknown",
+                "Unknown /memory subcommand. Use: pending, approve <id>, "
+                "reject <id>, approval <on|off>.",
+            )
         return out
 
     async def _handle_skills_command(self, event: MessageEvent) -> str:
@@ -3495,9 +3654,12 @@ class GatewaySlashCommandsMixin:
         gate_on = wa.write_approval_enabled(wa.SKILLS)
         wants_toggle = bool(args) and args[0].lower() in {"approval", "mode"}
         if not gate_on and not wants_toggle and wa.pending_count(wa.SKILLS) == 0:
-            return ("Skill write approval is off (skills.write_approval). "
-                    "Enable it with /skills approval on, then review staged "
-                    "writes here with /skills pending.")
+            return translate_or(
+                "gateway.command_locale.skills.approval_off",
+                "Skill write approval is off (skills.write_approval). Enable it "
+                "with /skills approval on, then review staged writes here with "
+                "/skills pending.",
+            )
 
         def _set_approval(enabled: bool):
             # Write-back round-trip: raw read is correct (merged defaults must
@@ -3513,9 +3675,12 @@ class GatewaySlashCommandsMixin:
             wa.SKILLS, args, set_mode_fn=_set_approval,
         )
         if out is None:
-            return ("Unknown /skills subcommand on this platform. Use: pending, "
-                    "approve <id>, reject <id>, diff <id>, approval <on|off>. "
-                    "(Search/install are CLI-only.)")
+            return translate_or(
+                "gateway.command_locale.skills.unknown",
+                "Unknown /skills subcommand on this platform. Use: pending, "
+                "approve <id>, reject <id>, diff <id>, approval <on|off>. "
+                "(Search/install are CLI-only.)",
+            )
 
         # Chat bubbles can't hold a full skill diff — truncate and point at
         # the real review surface. (Note: `hermes skills diff <name>` is a
@@ -3523,9 +3688,11 @@ class GatewaySlashCommandsMixin:
         # version — so we point at the pending JSON file, not that command.)
         if args and args[0].lower() == "diff" and len(out) > 3000:
             pending_id = args[1] if len(args) > 1 else "<id>"
-            out = (out[:3000]
-                   + "\n… (truncated — full diff in "
-                     f"~/.hermes/pending/skills/{pending_id}.json)")
+            out = out[:3000] + translate_or(
+                "gateway.command_locale.skills.truncated",
+                "\n… (truncated — full diff in {path})",
+                path=f"~/.hermes/pending/skills/{pending_id}.json",
+            )
         return out
 
     async def _handle_fast_command(self, event: MessageEvent) -> Optional[str]:
@@ -3624,7 +3791,10 @@ class GatewaySlashCommandsMixin:
         # this side-effect boundary. Unconfigured policies remain unrestricted.
         policy = policy_for_source(self.config, event.source)
         if requested and not policy.is_admin(event.source.user_id):
-            return "Only gateway admins can change the persistent approval mode."
+            return translate_or(
+                "gateway.command_locale.approvals.admin_only",
+                "Only gateway admins can change the persistent approval mode.",
+            )
         result = run_approval_mode_command(requested)
         # Approval checks load config dynamically; do not evict the cached agent
         # or alter its system prompt/tool schema (prompt-cache prefix is sacred).
@@ -4524,7 +4694,10 @@ class GatewaySlashCommandsMixin:
             return t("gateway.resume.parse_error", error=exc)
 
         if search_query == "":
-            return "Usage: `/sessions search <query>`"
+            return translate_or(
+                "gateway.command_locale.sessions.search_usage",
+                "Usage: `/sessions search <query>`",
+            )
 
         if target:
             resume_event = dataclasses.replace(event, text=f"/resume {target}")
@@ -4565,9 +4738,21 @@ class GatewaySlashCommandsMixin:
             ]
         rows = rows[:10]
         if search_query:
-            title = f"Sessions matching “{search_query}”"
+            title = translate_or(
+                "gateway.command_locale.sessions.title_matching",
+                "Sessions matching “{query}”",
+                query=search_query,
+            )
+        elif include_unnamed:
+            title = translate_or(
+                "gateway.command_locale.sessions.title_all",
+                "Sessions",
+            )
         else:
-            title = "Sessions" if include_unnamed else "Named Sessions"
+            title = translate_or(
+                "gateway.command_locale.sessions.title_named",
+                "Named Sessions",
+            )
         return format_gateway_session_listing(
             rows,
             include_source=cross_origin,
@@ -4705,7 +4890,9 @@ class GatewaySlashCommandsMixin:
         if view is None or not view.logged_in:
             return t("gateway.credits.not_logged_in")
 
-        lines: list[str] = ["💳 **Nous balance**"]
+        lines: list[str] = [translate_or(
+            "gateway.command_locale.topup.header", "💳 **Nous balance**"
+        )]
         for line in view.balance_lines:
             if line.lstrip().startswith("📈"):
                 continue  # drop the helper's header; we print our own
@@ -4715,8 +4902,15 @@ class GatewaySlashCommandsMixin:
             lines.append(view.identity_line)
         if view.topup_url:
             lines.append("")
-            lines.append(f"Manage billing on the portal: {view.topup_url}")
-            lines.append("Top up and manage billing in the browser — your balance updates here after.")
+            lines.append(translate_or(
+                "gateway.command_locale.topup.portal",
+                "Manage billing on the portal: {url}", url=view.topup_url,
+            ))
+            lines.append(translate_or(
+                "gateway.command_locale.topup.note",
+                "Top up and manage billing in the browser — your balance "
+                "updates here after.",
+            ))
         return "\n".join(lines)
 
     def _context_breakdown_block(self, agent, source, expanded: bool) -> list[str]:
@@ -5199,24 +5393,48 @@ class GatewaySlashCommandsMixin:
 
         bundles = reply.data["bundles"]
         if not bundles:
-            return (
+            return translate_or(
+                "gateway.command_locale.bundles.none",
                 "No skill bundles installed.\n"
                 "Create one on the host with:\n"
                 "  `hermes bundles create <name> --skill <s1> --skill <s2>`\n"
-                f"Directory: `{reply.data['dir']}`"
+                "Directory: `{directory}`",
+                directory=reply.data["dir"],
             )
 
-        lines = [f"**Skill Bundles** ({len(bundles)} installed):", ""]
+        lines = [
+            translate_or(
+                "gateway.command_locale.bundles.header",
+                "**Skill Bundles** ({count} installed):",
+                count=len(bundles),
+            ),
+            "",
+        ]
         for info in bundles:
             skill_count = len(info.get("skills", []))
-            desc = info.get("description") or f"Load {skill_count} skills"
+            desc = info.get("description") or translate_or(
+                "gateway.command_locale.bundles.default_description",
+                "Load {count} skills",
+                count=skill_count,
+            )
             lines.append(
-                f"• `/{info['slug']}` — {desc} _({skill_count} skills)_"
+                translate_or(
+                    "gateway.command_locale.bundles.item",
+                    "• `/{slug}` — {description} _({count} skills)_",
+                    slug=info["slug"],
+                    description=desc,
+                    count=skill_count,
+                )
             )
             for s in info.get("skills", []):
                 lines.append(f"    · {s}")
         lines.append("")
-        lines.append("Invoke a bundle with `/<slug>` to load all its skills.")
+        lines.append(
+            translate_or(
+                "gateway.command_locale.bundles.footer",
+                "Invoke a bundle with `/<slug>` to load all its skills.",
+            )
+        )
         return "\n".join(lines)
 
     async def _handle_approve_command(self, event: MessageEvent) -> Optional[str]:
@@ -5412,7 +5630,11 @@ class GatewaySlashCommandsMixin:
                 return t("gateway.update.platform_not_messaging")
 
         if is_managed():
-            return f"✗ {format_managed_message('update Hermes Agent')}"
+            return translate_or(
+                "gateway.command_locale.update.managed",
+                "✗ {message}",
+                message=format_managed_message("update Hermes Agent"),
+            )
 
         project_root = Path(__file__).parent.parent.resolve()
         git_dir = project_root / '.git'

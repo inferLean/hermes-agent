@@ -26,6 +26,31 @@ def _patch_info(tmp_path, config_yaml, model, runtime):
 
 class TestFormatSessionInfo:
 
+    def test_persian_localizes_static_session_labels(self, runner, tmp_path, monkeypatch):
+        """Persian gateway reset details must not append English UI labels."""
+        from agent import i18n
+
+        p1, p2, p3 = _patch_info(
+            tmp_path,
+            "model:\n  default: test-model\n  provider: custom\n  context_length: 32768\n",
+            "test-model",
+            {"provider": "custom", "base_url": "", "api_key": ""},
+        )
+        monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+        i18n.reset_language_cache()
+        try:
+            with p1, p2, p3:
+                info = runner._format_session_info()
+        finally:
+            i18n.reset_language_cache()
+
+        assert "◆ مدل: `test-model`" in info
+        assert "◆ ارائه‌دهنده: custom" in info
+        assert "◆ زمینه: 32K توکن" in info
+        assert "Model:" not in info
+        assert "Provider:" not in info
+        assert "Context:" not in info
+
     def test_includes_model_name(self, runner, tmp_path):
         p1, p2, p3 = _patch_info(tmp_path, "model:\n  default: anthropic/claude-opus-4.6\n  provider: openrouter\n",
                                   "anthropic/claude-opus-4.6",
@@ -101,4 +126,3 @@ class TestResetNoticeSessionInfo:
         assert "profile-model" in info
         assert "anthropic" in info
         assert "base-model" not in info
-

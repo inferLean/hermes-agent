@@ -133,6 +133,33 @@ async def test_whoami_non_admin_lists_runnable_commands():
     assert "/model" in result
 
 
+@pytest.mark.asyncio
+async def test_whoami_uses_active_persian_locale(monkeypatch):
+    """The /whoami access summary must translate its static labels."""
+    from agent import i18n
+
+    runner = _make_runner(
+        platform_extra={
+            "allow_admin_from": ["111"],
+            "user_allowed_commands": ["status"],
+        }
+    )
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        result = await runner._handle_message(
+            _make_event("/whoami", _make_source(user_id="999"))
+        )
+    finally:
+        i18n.reset_language_cache()
+
+    assert "**شما**" in result
+    assert "شناسه کاربر:" in result
+    assert "سطح: کاربر" in result
+    assert "فرمان‌های قابل اجرا:" in result
+    assert "Tier:" not in result
+
+
 # ---------------------------------------------------------------------------
 # Gate denial — admin-only command attempted by non-admin
 # ---------------------------------------------------------------------------
@@ -153,6 +180,31 @@ async def test_non_admin_with_empty_user_commands_gets_floor_only():
     # /whoami still works (always-allowed floor)
     whoami_result = await runner._handle_message(_make_event("/whoami", _make_source(user_id="999")))
     assert "Tier: user" in whoami_result
+
+
+@pytest.mark.asyncio
+async def test_admin_only_denial_uses_active_persian_locale(monkeypatch):
+    """Access-control denials must not leak English into a Persian chat."""
+    from agent import i18n
+
+    runner = _make_runner(
+        platform_extra={
+            "allow_admin_from": ["111"],
+            "user_allowed_commands": [],
+        }
+    )
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    i18n.reset_language_cache()
+    try:
+        result = await runner._handle_message(
+            _make_event("/stop", _make_source(user_id="999"))
+        )
+    finally:
+        i18n.reset_language_cache()
+
+    assert "فقط برای مدیران" in result
+    assert "هیچ فرمان اسلشی" in result
+    assert "admin-only" not in result
 
 
 # ---------------------------------------------------------------------------

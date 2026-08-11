@@ -1114,31 +1114,78 @@ class GoalManager:
         return self._state is not None and self._state.has_contract()
 
     def status_line(self) -> str:
+        from agent.i18n import translate_or
+
         s = self._state
         if s is None or s.status in {"cleared",}:
-            return "No active goal. Set one with /goal <text>."
-        turns = f"{s.turns_used}/{s.max_turns} turns"
-        sub = f", {len(s.subgoals)} subgoal{'s' if len(s.subgoals) != 1 else ''}" if s.subgoals else ""
-        con = ", contract" if self.has_contract() else ""
+            return translate_or(
+                "gateway.command_locale.goal.no_active",
+                "No active goal. Set one with /goal <text>.",
+            )
+        turns = translate_or(
+            "gateway.command_locale.goal.turns",
+            "{used}/{maximum} turns",
+            used=s.turns_used,
+            maximum=s.max_turns,
+        )
+        subgoal_count = len(s.subgoals)
+        subgoal_default = (
+            f", {subgoal_count} subgoal"
+            f"{'s' if subgoal_count != 1 else ''}"
+        )
+        sub = translate_or(
+            "gateway.command_locale.goal.subgoals_meta",
+            subgoal_default,
+            count=subgoal_count,
+        ) if s.subgoals else ""
+        con = translate_or(
+            "gateway.command_locale.goal.contract_meta", ", contract"
+        ) if self.has_contract() else ""
         meta = f"{turns}{sub}{con}"
         if s.status == "active":
             if s.waiting_on_session and _session_waiting(s.waiting_on_session):
                 wr = s.waiting_reason or f"session {s.waiting_on_session}"
-                return f"⏳ Goal (parked on {wr}, {meta}): {s.goal}"
+                return translate_or(
+                    "gateway.command_locale.goal.parked_on",
+                    "⏳ Goal (parked on {reason}, {meta}): {goal}",
+                    reason=wr, meta=meta, goal=s.goal,
+                )
             if s.waiting_on_pid and _pid_alive(s.waiting_on_pid):
                 wr = s.waiting_reason or f"pid {s.waiting_on_pid}"
-                return f"⏳ Goal (parked on {wr}, {meta}): {s.goal}"
+                return translate_or(
+                    "gateway.command_locale.goal.parked_on",
+                    "⏳ Goal (parked on {reason}, {meta}): {goal}",
+                    reason=wr, meta=meta, goal=s.goal,
+                )
             if s.waiting_until and time.time() < s.waiting_until:
                 remaining = int(s.waiting_until - time.time())
                 wr = s.waiting_reason or f"{remaining}s"
-                return f"⏳ Goal (parked {remaining}s — {wr}, {meta}): {s.goal}"
-            return f"⊙ Goal (active, {meta}): {s.goal}"
+                return translate_or(
+                    "gateway.command_locale.goal.parked_seconds",
+                    "⏳ Goal (parked {seconds}s — {reason}, {meta}): {goal}",
+                    seconds=remaining, reason=wr, meta=meta, goal=s.goal,
+                )
+            return translate_or(
+                "gateway.command_locale.goal.active",
+                "⊙ Goal (active, {meta}): {goal}", meta=meta, goal=s.goal,
+            )
         if s.status == "paused":
             extra = f" — {s.paused_reason}" if s.paused_reason else ""
-            return f"⏸ Goal (paused, {meta}{extra}): {s.goal}"
+            return translate_or(
+                "gateway.command_locale.goal.paused",
+                "⏸ Goal (paused, {meta}{extra}): {goal}",
+                meta=meta, extra=extra, goal=s.goal,
+            )
         if s.status == "done":
-            return f"✓ Goal done ({meta}): {s.goal}"
-        return f"Goal ({s.status}, {meta}): {s.goal}"
+            return translate_or(
+                "gateway.command_locale.goal.done",
+                "✓ Goal done ({meta}): {goal}", meta=meta, goal=s.goal,
+            )
+        return translate_or(
+            "gateway.command_locale.goal.other",
+            "Goal ({status}, {meta}): {goal}",
+            status=s.status, meta=meta, goal=s.goal,
+        )
 
     # --- mutation -----------------------------------------------------
 
@@ -1256,10 +1303,17 @@ class GoalManager:
 
     def render_subgoals(self) -> str:
         """Public helper for the /subgoal slash command."""
+        from agent.i18n import translate_or
+
         if self._state is None:
-            return "(no active goal)"
+            return translate_or(
+                "gateway.command_locale.goal.no_active_short", "(no active goal)"
+            )
         if not self._state.subgoals:
-            return "(no subgoals — use /subgoal <text> to add criteria)"
+            return translate_or(
+                "gateway.command_locale.goal.no_subgoals",
+                "(no subgoals — use /subgoal <text> to add criteria)",
+            )
         return self._state.render_subgoals_block()
 
     # --- /goal wait barrier -------------------------------------------
@@ -1623,10 +1677,18 @@ class GoalManager:
 
     def render_contract(self) -> str:
         """Public helper for the /goal show + /goal draft slash commands."""
+        from agent.i18n import translate_or
+
         if self._state is None:
-            return "(no active goal)"
+            return translate_or(
+                "gateway.command_locale.goal.no_active_short", "(no active goal)"
+            )
         if not self._state.has_contract():
-            return "(no completion contract — set one with /goal draft <objective> or inline field: value lines)"
+            return translate_or(
+                "gateway.command_locale.goal.no_contract",
+                "(no completion contract — set one with /goal draft <objective> "
+                "or inline field: value lines)",
+            )
         return self._state.contract.render_block()
 
 
