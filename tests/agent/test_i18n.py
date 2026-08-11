@@ -167,6 +167,24 @@ def test_default_when_nothing_set(monkeypatch):
     assert i18n.get_language() == "en"
 
 
+def test_config_language_reloads_when_profile_config_changes(tmp_path, monkeypatch):
+    """A running gateway must notice a later display.language update."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("display:\n  language: en\n", encoding="utf-8")
+    monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    i18n.reset_language_cache()
+
+    try:
+        assert i18n.get_language() == "en"
+
+        config_path.write_text("display:\n  language: fa\n", encoding="utf-8")
+
+        assert i18n.get_language() == "fa"
+    finally:
+        i18n.reset_language_cache()
+
+
 # ---------------------------------------------------------------------------
 # t() semantics
 # ---------------------------------------------------------------------------

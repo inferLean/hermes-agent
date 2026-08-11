@@ -189,15 +189,14 @@ def _flatten_into(node: Any, prefix: str, out: dict[str, str]) -> None:
     # Non-string, non-dict leaves are ignored -- catalogs are text-only.
 
 
-@lru_cache(maxsize=1)
-def _config_language_cached() -> str | None:
-    """Read ``display.language`` from config.yaml once per process.
-
-    Cached because ``t()`` is called in hot paths (every approval prompt,
-    every gateway reply) and re-reading YAML each call would be wasteful.
-    ``reset_language_cache()`` clears this when config changes at runtime
-    (e.g. after the setup wizard).
-    """
+@lru_cache(maxsize=32)
+def _config_language_for_file(
+    config_path: str,
+    modified_ns: int,
+    size: int,
+) -> str | None:
+    """Read ``display.language`` for one version of a profile config file."""
+    del config_path, modified_ns, size
     try:
         from hermes_cli.config import load_config_readonly
         cfg = load_config_readonly()
@@ -209,13 +208,32 @@ def _config_language_cached() -> str | None:
     return None
 
 
+def _config_language_cached() -> str | None:
+    """Return ``display.language``, reloading when profile config changes.
+
+    ``t()`` runs in hot paths, so parsed values stay cached while the config
+    file is unchanged. Including the active profile path and file fingerprint
+    prevents a long-running gateway from keeping a stale language after the
+    dashboard updates ``config.yaml``.
+    """
+    try:
+        from hermes_constants import get_hermes_home
+
+        config_path = get_hermes_home() / "config.yaml"
+        stat = config_path.stat()
+        fingerprint = (str(config_path), stat.st_mtime_ns, stat.st_size)
+    except (OSError, RuntimeError):
+        fingerprint = (str(config_path) if "config_path" in locals() else "", -1, -1)
+    return _config_language_for_file(*fingerprint)
+
+
 def reset_language_cache() -> None:
     """Invalidate cached language resolution and catalogs.
 
     Call after :func:`hermes_cli.config.save_config` if a running process
     needs to pick up a changed ``display.language`` without restart.
     """
-    _config_language_cached.cache_clear()
+    _config_language_for_file.cache_clear()
     with _catalog_lock:
         _catalog_cache.clear()
 
