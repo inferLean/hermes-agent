@@ -17267,12 +17267,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if source.platform == Platform.SLACK
                     else "/sethome"
                 )
-                notice = (
-                    f"📬 No home channel is set for {platform_name.title()}. "
-                    f"A home channel is where Hermes delivers cron job results "
-                    f"and cross-platform messages.\n\n"
-                    f"Type {sethome_cmd} to make this chat your home channel, "
-                    f"or ignore to skip."
+                notice = t(
+                    "gateway.home_channel_missing",
+                    platform=platform_name.title(),
+                    command=sethome_cmd,
                 )
                 await self._deliver_platform_notice(source, notice)
         

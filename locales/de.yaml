@@ -20,6 +20,7 @@ approval:
   blocklist_message: "Dieser Befehl steht auf der unbedingten Sperrliste und kann nicht genehmigt werden."
 
 gateway:
+  home_channel_missing: "📬 No home channel is set for {platform}. A home channel is where Hermes delivers cron job results and cross-platform messages.\\n\\nType {command} to make this chat your home channel, or ignore to skip."
   approval_expired: "⚠️ Genehmigung abgelaufen (Agent wartet nicht mehr). Bitten Sie den Agenten, es erneut zu versuchen."
   draining:         "⏳ Warte auf {count} aktive(n) Agent(en) vor dem Neustart..."
   goal_cleared:     "✓ Ziel gelöscht."

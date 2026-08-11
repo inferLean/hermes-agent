@@ -37,6 +37,7 @@ gateway:
   no_active_goal:   "No active goal."
   config_read_failed: "⚠️ Could not read config.yaml: {error}"
   config_save_failed: "⚠️ Could not save config: {error}"
+  home_channel_missing: "📬 No home channel is set for {platform}. A home channel is where Hermes delivers cron job results and cross-platform messages.\n\nType {command} to make this chat your home channel, or ignore to skip."
 
   # /model command output -- shown after a model switch or when listing models.
   # Provider names, model IDs, capability strings, and cost figures are NOT

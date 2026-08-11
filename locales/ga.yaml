@@ -24,6 +24,7 @@ approval:
   blocklist_message: "Tá an t-ordú seo ar an liosta cosc gan choinníoll agus ní féidir é a cheadú."
 
 gateway:
+  home_channel_missing: "📬 No home channel is set for {platform}. A home channel is where Hermes delivers cron job results and cross-platform messages.\\n\\nType {command} to make this chat your home channel, or ignore to skip."
   approval_expired: "⚠️ Tá an cead imithe in éag (níl an gníomhaire ag fanacht níos mó). Iarr ar an ngníomhaire iarracht eile a dhéanamh."
   draining:         "⏳ Ag fanacht le {count} gníomhaire(í) gníomhach roimh atosú..."
   goal_cleared:     "✓ Sprioc glanta."

@@ -20,6 +20,7 @@ approval:
   blocklist_message: "Ця команда є в безумовному списку блокування, її не можна схвалити."
 
 gateway:
+  home_channel_missing: "📬 No home channel is set for {platform}. A home channel is where Hermes delivers cron job results and cross-platform messages.\\n\\nType {command} to make this chat your home channel, or ignore to skip."
   approval_expired: "⚠️ Час схвалення минув (агент більше не очікує). Попросіть агента спробувати ще раз."
   draining:         "⏳ Очікування завершення {count} активних агент(ів) перед перезапуском..."
   goal_cleared:     "✓ Ціль очищено."
