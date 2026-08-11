@@ -22,6 +22,8 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Any
 
+from agent.i18n import translate_or
+
 logger = logging.getLogger(__name__)
 
 
@@ -5526,11 +5528,29 @@ class TelegramAdapter(BasePlatformAdapter):
 
             keyboard = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("✅ Approve Once", callback_data=f"sc:once:{confirm_id}"),
-                    InlineKeyboardButton("🔒 Always Approve", callback_data=f"sc:always:{confirm_id}"),
+                    InlineKeyboardButton(
+                        translate_or(
+                            "gateway.command_locale.destructive_confirm.button_once",
+                            "✅ Approve Once",
+                        ),
+                        callback_data=f"sc:once:{confirm_id}",
+                    ),
+                    InlineKeyboardButton(
+                        translate_or(
+                            "gateway.command_locale.destructive_confirm.button_always",
+                            "🔒 Always Approve",
+                        ),
+                        callback_data=f"sc:always:{confirm_id}",
+                    ),
                 ],
                 [
-                    InlineKeyboardButton("❌ Cancel", callback_data=f"sc:cancel:{confirm_id}"),
+                    InlineKeyboardButton(
+                        translate_or(
+                            "gateway.command_locale.destructive_confirm.button_cancel",
+                            "❌ Cancel",
+                        ),
+                        callback_data=f"sc:cancel:{confirm_id}",
+                    ),
                 ],
             ])
 

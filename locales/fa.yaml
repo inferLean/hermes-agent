@@ -42,6 +42,17 @@ gateway:
       codex_runtime: "عامل در حال اجراست — ابتدا منتظر بمانید یا /stop را بفرستید، سپس محیط اجرا را تغییر دهید."
       moa: "عامل در حال اجراست — ابتدا منتظر بمانید یا /stop را بفرستید، سپس /moa را اجرا کنید."
       generic: "⏳ عامل در حال اجراست — `/{command}` نمی‌تواند میان نوبت اجرا شود. منتظر پاسخ فعلی بمانید یا ابتدا `/stop` را بفرستید."
+    destructive_confirm:
+      detail_new: "این کار یک نشست تازه آغاز می‌کند و تاریخچه گفت‌وگوی فعلی را کنار می‌گذارد."
+      detail_undo_one: "این کار آخرین تبادل کاربر و دستیار را از تاریخچه حذف می‌کند."
+      detail_undo_many: "این کار آخرین {count} نوبت کاربر را از تاریخچه حذف می‌کند."
+      prompt: "⚠️ **تأیید /{command}**\n\n{detail}\n\nانتخاب کنید:\n• **تأیید یک‌باره** — فقط همین بار ادامه دهید\n• **تأیید همیشگی** — ادامه دهید و این پرسش را برای همیشه خاموش کنید\n• **لغو** — گفت‌وگوی فعلی را نگه دارید\n\n_حالت متنی: با `{prefix}approve`، `{prefix}always` یا `{prefix}cancel` پاسخ دهید._"
+      button_once: "✅ تأیید یک‌باره"
+      button_always: "🔒 تأیید همیشگی"
+      button_cancel: "❌ لغو"
+      cancelled: "🟡 فرمان /{command} لغو شد. گفت‌وگو بدون تغییر ماند."
+      always_saved: "\n\nℹ️ از این پس /clear، /new، /reset و /undo بدون تأیید اجرا می‌شوند. برای فعال‌کردن دوباره، مقدار `approvals.destructive_slash_confirm: true` را در config.yaml تنظیم کنید."
+      always_save_failed: "\n\n⚠️ ذخیره این انتخاب ممکن نشد (config.yaml قابل نوشتن نیست)، بنابراین /clear، /new، /reset و /undo دفعه بعد دوباره تأیید می‌خواهند. برای خاموش‌کردن همیشگی این پرسش، مقدار `approvals.destructive_slash_confirm: false` را در config.yaml تنظیم کنید."
     queue:
       usage: "روش استفاده: /queue <prompt>"
       queued_one: "برای نوبت بعد در صف قرار گرفت."
