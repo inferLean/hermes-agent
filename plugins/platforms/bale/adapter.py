@@ -9,6 +9,7 @@ not document are disabled here instead of being probed at runtime.
 from __future__ import annotations
 
 import os
+import re
 from collections import OrderedDict
 from typing import Any
 
@@ -22,6 +23,7 @@ from plugins.platforms.telegram.adapter import (
 
 BALE_API_BASE = "https://tapi.bale.ai/bot"
 BALE_FILE_BASE = "https://tapi.bale.ai/file/bot"
+_MARKDOWN_V2_ESCAPE = re.compile(r"\\([_*\[\]()~`>#+\-=|{}.!\\])")
 
 
 def _get_bale_token(config: Any) -> str:
@@ -94,6 +96,15 @@ class BaleAdapter(TelegramAdapter):
     def _reactions_enabled(self) -> bool:
         """Keep Telegram-only reaction lifecycle calls disabled for Bale."""
         return False
+
+    def format_message(self, content: str) -> str:
+        """Convert shared MarkdownV2 output into Bale's legacy Markdown."""
+        formatted = super().format_message(content)
+        return _MARKDOWN_V2_ESCAPE.sub(r"\1", formatted)
+
+    def _markdown_parse_mode(self) -> str:
+        """Use the Markdown mode documented by Bale instead of MarkdownV2."""
+        return "Markdown"
 
     async def _run_post_connect_housekeeping(self) -> None:
         """Skip Telegram command menus, status text, and private-chat topics."""
