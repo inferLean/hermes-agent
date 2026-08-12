@@ -25,7 +25,7 @@ concurrency:
 
 env:
   IMAGE_NAME: ${{ github.repository == 'NousResearch/hermes-agent' && 'nousresearch/hermes-agent' || 'ghcr.io/inferlean/hermes-agent' }}
-  INFERLEAN_RELEASE_TAG: v2026.8.3-bale-fa.5
+  INFERLEAN_RELEASE_TAG: v2026.8.3-bale-fa.6
 
 jobs:
   # Build and test the image for each architecture. This job runs PR code,
