@@ -223,6 +223,7 @@ async def test_monitor_to_drain_transcribes_and_echoes_pending_voice_once(
 @pytest.mark.asyncio
 async def test_telegram_video_size_gate_rejects_oversized_media_before_download():
     adapter = object.__new__(TelegramAdapter)
+    adapter.platform = Platform.TELEGRAM
     adapter._max_doc_bytes = 1024
     adapter._should_process_message = lambda _message: True
     adapter._build_message_event = lambda _message, _type, update_id=None: SimpleNamespace(
@@ -274,5 +275,4 @@ def _voice_event(source, urls):
         media_urls=list(urls),
         media_types=["audio/ogg"] * len(urls),
     )
-
 

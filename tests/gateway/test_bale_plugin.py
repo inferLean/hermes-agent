@@ -132,6 +132,73 @@ def test_adapter_uses_bale_identity_and_disables_undocumented_extensions(
     assert adapter._reactions_enabled() is False
 
 
+@pytest.mark.asyncio
+async def test_adapter_sends_supported_markdown_without_telegram_v2_escapes(
+    bale_plugin,
+):
+    """Bale replies must render formatting without exposing MarkdownV2 slashes."""
+    calls: list[dict] = []
+
+    class _Bot:
+        async def send_message(self, **kwargs):
+            """Capture the real adapter boundary without calling Bale."""
+            calls.append(kwargs)
+            return SimpleNamespace(message_id=91)
+
+    adapter = bale_plugin.BaleAdapter(
+        PlatformConfig(enabled=True, token="test-token", extra={})
+    )
+    adapter._bot = _Bot()
+
+    result = await adapter.send(
+        "1856114092",
+        "\U0001f4ca **اطلاعات نشست**\n"
+        "پیام‌ها: 2\n"
+        "زمینه برآوردی: حدود 540 توکن\n"
+        "_(مصرف تفصیلی پس از نخستین پاسخ عامل در دسترس است)_",
+    )
+
+    assert result.success is True
+    assert calls[0]["parse_mode"] == "Markdown"
+    assert calls[0]["text"] == (
+        "📊 *اطلاعات نشست*\n"
+        "پیام‌ها: 2\n"
+        "زمینه برآوردی: حدود 540 توکن\n"
+        "_(مصرف تفصیلی پس از نخستین پاسخ عامل در دسترس است)_"
+    )
+
+
+@pytest.mark.asyncio
+async def test_adapter_sends_slash_confirmation_with_bale_markdown(bale_plugin):
+    """Bale command prompts must use the same escape-free formatting mode."""
+    calls: list[dict] = []
+
+    class _Bot:
+        async def send_message(self, **kwargs):
+            """Capture the command prompt at the Bale transport boundary."""
+            calls.append(kwargs)
+            return SimpleNamespace(message_id=92)
+
+    adapter = bale_plugin.BaleAdapter(
+        PlatformConfig(enabled=True, token="test-token", extra={})
+    )
+    adapter._bot = _Bot()
+
+    result = await adapter.send_slash_confirm(
+        "1856114092",
+        "تأیید /new",
+        "**تأیید /new**\n\n_(یک نشست تازه آغاز می‌شود.)_",
+        "bale:1856114092",
+        "confirm-1",
+    )
+
+    assert result.success is True
+    assert calls[0]["parse_mode"] == "Markdown"
+    assert calls[0]["text"] == (
+        "*تأیید /new*\n\n_(یک نشست تازه آغاز می‌شود.)_"
+    )
+
+
 def test_adapter_skips_telegram_only_post_connect_calls(bale_plugin):
     """Bale startup must not call undocumented Telegram command-menu APIs."""
 

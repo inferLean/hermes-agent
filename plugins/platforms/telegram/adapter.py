@@ -4558,7 +4558,7 @@ class TelegramAdapter(BasePlatformAdapter):
                             msg = await self._bot.send_message(
                                 chat_id=normalize_telegram_chat_id(chat_id),
                                 text=chunk,
-                                parse_mode=ParseMode.MARKDOWN_V2,
+                                parse_mode=self._markdown_parse_mode(),
                                 reply_to_message_id=reply_to_id,
                                 **thread_kwargs,
                                 **self._link_preview_kwargs(),
@@ -4880,7 +4880,7 @@ class TelegramAdapter(BasePlatformAdapter):
                     chat_id=normalize_telegram_chat_id(chat_id),
                     message_id=int(message_id),
                     text=formatted,
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                    parse_mode=self._markdown_parse_mode(),
                 )
             except Exception as fmt_err:
                 # "Message is not modified" is a no-op, not an error
@@ -5057,7 +5057,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         chat_id=normalize_telegram_chat_id(chat_id),
                         message_id=int(message_id),
                         text=formatted,
-                        parse_mode=ParseMode.MARKDOWN_V2,
+                        parse_mode=self._markdown_parse_mode(),
                     )
                 except Exception as fmt_err:
                     if "not modified" not in str(fmt_err).lower():
@@ -5124,7 +5124,7 @@ class TelegramAdapter(BasePlatformAdapter):
                     sent_msg = await self._bot.send_message(
                         chat_id=normalize_telegram_chat_id(chat_id),
                         text=text,
-                        parse_mode=ParseMode.MARKDOWN_V2 if use_markdown else None,
+                        parse_mode=self._markdown_parse_mode() if use_markdown else None,
                         reply_to_message_id=reply_to_id,
                         **thread_kwargs,
                         **self._link_preview_kwargs(),
@@ -5315,7 +5315,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 "text": self.format_message(text) if use_markdown else text,
             }
             if use_markdown:
-                kwargs["parse_mode"] = ParseMode.MARKDOWN_V2
+                kwargs["parse_mode"] = self._markdown_parse_mode()
             if thread_id is not None:
                 kwargs["message_thread_id"] = thread_id
 
@@ -5412,7 +5412,7 @@ class TelegramAdapter(BasePlatformAdapter):
             msg = await self._send_message_with_thread_fallback(
                 chat_id=normalize_telegram_chat_id(chat_id),
                 text=text,
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
                 reply_to_message_id=reply_to_id,
                 **self._thread_kwargs_for_send(
@@ -5558,7 +5558,7 @@ class TelegramAdapter(BasePlatformAdapter):
             kwargs: Dict[str, Any] = {
                 "chat_id": normalize_telegram_chat_id(chat_id),
                 "text": preview,
-                "parse_mode": ParseMode.MARKDOWN_V2,
+                "parse_mode": self._markdown_parse_mode(),
                 "reply_markup": keyboard,
                 **self._link_preview_kwargs(),
             }
@@ -5706,7 +5706,7 @@ class TelegramAdapter(BasePlatformAdapter):
             msg = await self._send_message_with_thread_fallback(
                 chat_id=normalize_telegram_chat_id(chat_id),
                 text=text,
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
                 reply_to_message_id=reply_to_id,
                 **self._thread_kwargs_for_send(
@@ -5776,7 +5776,7 @@ class TelegramAdapter(BasePlatformAdapter):
             msg = await self._send_message_with_thread_fallback(
                 chat_id=normalize_telegram_chat_id(chat_id),
                 text=self.format_message(title),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
                 reply_to_message_id=reply_to_id,
                 **self._thread_kwargs_for_send(
@@ -5845,7 +5845,7 @@ class TelegramAdapter(BasePlatformAdapter):
         try:
             await query.edit_message_text(
                 text=self.format_message(result_text),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=None,
             )
         except Exception:
@@ -6012,7 +6012,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         f"Select a model:{extra}"
                     )
                 ),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
             )
             await query.answer()
@@ -6048,7 +6048,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         f"Select a model:{extra}"
                     )
                 ),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
             )
             await query.answer()
@@ -6080,7 +6080,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         f"Select a provider:{provider_page_info}"
                     )
                 ),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
             )
             await query.answer()
@@ -6117,7 +6117,7 @@ class TelegramAdapter(BasePlatformAdapter):
             try:
                 await query.edit_message_text(
                     text=self.format_message(result_text),
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                    parse_mode=self._markdown_parse_mode(),
                     reply_markup=None,
                 )
             except Exception:
@@ -6179,7 +6179,7 @@ class TelegramAdapter(BasePlatformAdapter):
                     text=self.format_message(
                         f"⚠ *Expensive Model Warning*\n\n{warning.message}"
                     ),
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                    parse_mode=self._markdown_parse_mode(),
                     reply_markup=keyboard,
                 )
                 await query.answer(text="Confirm expensive model")
@@ -6197,7 +6197,7 @@ class TelegramAdapter(BasePlatformAdapter):
             try:
                 await query.edit_message_text(
                     text=self.format_message(result_text),
-                    parse_mode=ParseMode.MARKDOWN_V2,
+                    parse_mode=self._markdown_parse_mode(),
                     reply_markup=None,
                 )
             except Exception:
@@ -6256,7 +6256,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         f"Select a provider:"
                     )
                 ),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
             )
             await query.answer()
@@ -6282,7 +6282,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         f"Select a provider:{provider_page_info}"
                     )
                 ),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=keyboard,
             )
             await query.answer()
@@ -6436,7 +6436,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 try:
                     await query.edit_message_text(
                         text=self.format_message(edit_text),
-                        parse_mode=ParseMode.MARKDOWN_V2,
+                        parse_mode=self._markdown_parse_mode(),
                         reply_markup=None,
                     )
                 except Exception:
@@ -6487,7 +6487,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 try:
                     await query.edit_message_text(
                         text=self.format_message(f"{label} by {user_display}"),
-                        parse_mode=ParseMode.MARKDOWN_V2,
+                        parse_mode=self._markdown_parse_mode(),
                         reply_markup=None,
                     )
                 except Exception:
@@ -6513,7 +6513,7 @@ class TelegramAdapter(BasePlatformAdapter):
                         send_kwargs: Dict[str, Any] = {
                             "chat_id": int(query.message.chat_id),
                             "text": self.format_message(result_text),
-                            "parse_mode": ParseMode.MARKDOWN_V2,
+                            "parse_mode": self._markdown_parse_mode(),
                             **self._link_preview_kwargs(),
                         }
                         chat_type_value = getattr(chat_type, "value", chat_type)
@@ -6687,7 +6687,7 @@ class TelegramAdapter(BasePlatformAdapter):
         try:
             await query.edit_message_text(
                 text=self.format_message(f"⚕ Update prompt answered: *{label}*"),
-                parse_mode=ParseMode.MARKDOWN_V2,
+                parse_mode=self._markdown_parse_mode(),
                 reply_markup=None,
             )
         except Exception:
@@ -6895,7 +6895,7 @@ class TelegramAdapter(BasePlatformAdapter):
                     _formatted_caption = self.format_message(caption)
                     if utf16_len(_formatted_caption) <= 1024:
                         _caption_variants.append(
-                            (_formatted_caption, ParseMode.MARKDOWN_V2)
+                            (_formatted_caption, self._markdown_parse_mode())
                         )
                 except Exception:
                     logger.debug(
@@ -7786,6 +7786,10 @@ class TelegramAdapter(BasePlatformAdapter):
         text = ''.join(_safe_parts)
 
         return text
+
+    def _markdown_parse_mode(self) -> str:
+        """Return the parse mode paired with :meth:`format_message`."""
+        return ParseMode.MARKDOWN_V2
 
     # ── Group mention gating ──────────────────────────────────────────────
 
