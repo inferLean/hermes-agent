@@ -47,6 +47,7 @@ def test_register_exposes_independent_bale_gateway_contract(bale_plugin):
     assert registration["cron_deliver_env_var"] == "BALE_HOME_CHANNEL"
     assert "Persian" in registration["platform_hint"]
     assert "unless the user requests another language" in registration["platform_hint"]
+    assert "MEDIA:/absolute/path/to/file" in registration["platform_hint"]
 
 
 def test_env_enablement_seeds_endpoints_and_home_channel(monkeypatch, bale_plugin):
@@ -281,6 +282,33 @@ async def test_adapter_suppresses_replayed_bale_message(monkeypatch, bale_plugin
     assert forwarded == [first]
 
 
+@pytest.mark.asyncio
+async def test_adapter_routes_bale_audio_uploads_through_voice_stt(
+    monkeypatch, bale_plugin
+):
+    """Bale audio uploads must enter Hermes' automatic speech transcription."""
+    forwarded: list[object] = []
+
+    async def record_forward(_adapter, event) -> None:
+        forwarded.append(event)
+
+    monkeypatch.setattr(bale_plugin.TelegramAdapter, "handle_message", record_forward)
+    adapter = bale_plugin.BaleAdapter(
+        PlatformConfig(enabled=True, token="test-token", extra={})
+    )
+    event = SimpleNamespace(
+        source=SimpleNamespace(chat_id="42"),
+        message_id="74",
+        platform_update_id=102,
+        message_type=bale_plugin.MessageType.AUDIO,
+    )
+
+    await adapter.handle_message(event)
+
+    assert forwarded == [event]
+    assert event.message_type == bale_plugin.MessageType.VOICE
+
+
 def test_connected_check_accepts_configured_token(monkeypatch, bale_plugin):
     """Gateway status must report Bale configured from config or BALE_BOT_TOKEN."""
     monkeypatch.delenv("BALE_BOT_TOKEN", raising=False)
@@ -328,14 +356,67 @@ def test_standalone_send_posts_to_bale_and_returns_message_id(monkeypatch, bale_
     assert result == {"success": True, "message_id": "987"}
 
 
-def test_standalone_send_rejects_media_until_bale_transport_supports_it(bale_plugin):
-    """Cron delivery must fail clearly rather than silently dropping attachments."""
+def test_standalone_send_uploads_media_as_bale_document(
+    monkeypatch, tmp_path, bale_plugin
+):
+    """Out-of-process Bale delivery must preserve generated file attachments."""
+    report = tmp_path / "report.pdf"
+    report.write_bytes(b"report body")
+    captured: list[dict] = []
+
+    class _Response:
+        def raise_for_status(self) -> None:
+            """Represent a successful Bale HTTP response."""
+
+        def json(self) -> dict:
+            """Return the documented Telegram-compatible success envelope."""
+            return {"ok": True, "result": {"message_id": 988}}
+
+    class _Client:
+        async def __aenter__(self):
+            """Open the fake client context."""
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            """Close the fake client context."""
+
+        async def post(self, url: str, **kwargs) -> _Response:
+            """Capture text and multipart Bale requests without network access."""
+            document = kwargs.get("files", {}).get("document")
+            captured.append(
+                {
+                    "url": url,
+                    "json": kwargs.get("json"),
+                    "data": kwargs.get("data"),
+                    "filename": document[0] if document else None,
+                    "body": document[1].read() if document else None,
+                }
+            )
+            return _Response()
+
+    monkeypatch.setattr(bale_plugin.httpx, "AsyncClient", lambda **_kwargs: _Client())
     config = SimpleNamespace(token="test-token", extra={})
 
     result = asyncio.run(
-        bale_plugin._standalone_send(config, "123", "گزارش", media_files=["report.pdf"])
+        bale_plugin._standalone_send(
+            config, "123", "گزارش", media_files=[str(report)]
+        )
     )
 
-    assert result == {
-        "error": "Bale standalone delivery does not support media attachments yet"
-    }
+    assert captured == [
+        {
+            "url": "https://tapi.bale.ai/bottest-token/sendMessage",
+            "json": {"chat_id": "123", "text": "گزارش"},
+            "data": None,
+            "filename": None,
+            "body": None,
+        },
+        {
+            "url": "https://tapi.bale.ai/bottest-token/sendDocument",
+            "json": None,
+            "data": {"chat_id": "123"},
+            "filename": "report.pdf",
+            "body": b"report body",
+        },
+    ]
+    assert result == {"success": True, "message_id": "988"}

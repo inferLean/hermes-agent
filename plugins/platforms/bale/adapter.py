@@ -11,11 +11,13 @@ from __future__ import annotations
 import os
 import re
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any
 
 import httpx
 
 from gateway.config import Platform, PlatformConfig
+from gateway.platforms.base import MessageType
 from plugins.platforms.telegram.adapter import (
     TelegramAdapter,
     check_telegram_requirements,
@@ -72,7 +74,7 @@ class BaleAdapter(TelegramAdapter):
         self._recent_message_keys: OrderedDict[str, None] = OrderedDict()
 
     async def handle_message(self, event: Any) -> None:
-        """Forward each Bale message once when polling replays an update."""
+        """Normalize Bale media and forward each polling update at most once."""
         source = getattr(event, "source", None)
         chat_id = getattr(source, "chat_id", None)
         message_id = getattr(event, "message_id", None)
@@ -90,6 +92,13 @@ class BaleAdapter(TelegramAdapter):
             self._recent_message_keys[key] = None
             if len(self._recent_message_keys) > 4096:
                 self._recent_message_keys.popitem(last=False)
+
+        # Bale clients commonly upload voice notes through the Bot API's
+        # ``audio`` field instead of ``voice``. Hermes intentionally leaves
+        # Telegram AUDIO attachments untranscribed, but Bale's product
+        # contract treats both forms as speech input for the assistant.
+        if getattr(event, "message_type", None) == MessageType.AUDIO:
+            event.message_type = MessageType.VOICE
 
         await super().handle_message(event)
 
@@ -179,39 +188,73 @@ async def _standalone_send(
     force_document: bool = False,
 ) -> dict[str, Any]:
     """Send a cron or notification message directly through Bale's Bot API."""
-    if media_files or force_document:
-        return {
-            "error": "Bale standalone delivery does not support media attachments yet"
-        }
-
     token = _get_bale_token(pconfig)
     if not token:
         return {"error": "BALE_BOT_TOKEN is not configured"}
 
-    payload: dict[str, Any] = {"chat_id": str(chat_id), "text": message}
     if thread_id:
         # Bale does not document Telegram forum topics, so the argument is
         # intentionally ignored instead of sending message_thread_id.
         pass
 
+    last_message_id = ""
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(
-                f"{BALE_API_BASE}{token}/sendMessage",
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
+            if message.strip():
+                response = await client.post(
+                    f"{BALE_API_BASE}{token}/sendMessage",
+                    json={"chat_id": str(chat_id), "text": message},
+                )
+                response.raise_for_status()
+                data = response.json()
+                error = _bale_response_error(data, "sendMessage")
+                if error:
+                    return {"error": error}
+                last_message_id = _bale_message_id(data)
+
+            for media_path in media_files or []:
+                path = Path(media_path)
+                if not path.is_file():
+                    return {"error": f"Bale media file does not exist: {media_path}"}
+                with path.open("rb") as media:
+                    response = await client.post(
+                        f"{BALE_API_BASE}{token}/sendDocument",
+                        data={"chat_id": str(chat_id)},
+                        files={
+                            "document": (
+                                path.name,
+                                media,
+                                "application/octet-stream",
+                            )
+                        },
+                    )
+                response.raise_for_status()
+                data = response.json()
+                error = _bale_response_error(data, "sendDocument")
+                if error:
+                    return {"error": error}
+                last_message_id = _bale_message_id(data)
     except (httpx.HTTPError, ValueError) as error:
         return {"error": _redact_token(str(error), token)}
 
-    if not isinstance(data, dict) or not data.get("ok"):
-        description = data.get("description") if isinstance(data, dict) else None
-        return {"error": str(description or "Bale sendMessage failed")}
+    if not message.strip() and not media_files:
+        return {"error": "Bale message and media attachments are empty"}
+    return {"success": True, "message_id": last_message_id}
 
+
+def _bale_response_error(data: Any, method: str) -> str:
+    """Return a Bale Bot API error message, or an empty string on success."""
+    if isinstance(data, dict) and data.get("ok"):
+        return ""
+    description = data.get("description") if isinstance(data, dict) else None
+    return str(description or f"Bale {method} failed")
+
+
+def _bale_message_id(data: dict[str, Any]) -> str:
+    """Extract a message identifier from a successful Bale response."""
     result = data.get("result")
     message_id = result.get("message_id") if isinstance(result, dict) else None
-    return {"success": True, "message_id": str(message_id or "")}
+    return str(message_id or "")
 
 
 def register(ctx: Any) -> None:
@@ -237,6 +280,8 @@ def register(ctx: Any) -> None:
         platform_hint=(
             "You are chatting through Bale, an Iranian messaging platform. "
             "Reply in Persian by default unless the user requests another language. "
-            "Use concise mobile-friendly formatting and avoid Telegram-only features."
+            "Use concise mobile-friendly formatting and avoid Telegram-only features. "
+            "You can send files natively by including MEDIA:/absolute/path/to/file "
+            "in your response. Do not claim that file delivery is unsupported."
         ),
     )
