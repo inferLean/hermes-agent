@@ -1027,3 +1027,29 @@ class TestPluginCommandEnumeration:
         slack_names = set(slack_subcommand_map())
         assert "status" in tg_names
         assert "status" in slack_names
+
+
+def test_compatible_menu_uses_selected_platform_skill_filter(tmp_path, monkeypatch):
+    """Bale-only skill settings must not hide commands in Telegram's menu."""
+    import agent.skill_commands
+    import tools.skills_tool
+    import hermes_cli.plugins
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text(
+        "skills:\n  platform_disabled:\n    bale: [daily-report]\n"
+    )
+    skills = tmp_path / "skills"
+    skills.mkdir()
+    monkeypatch.setattr(tools.skills_tool, "SKILLS_DIR", skills)
+    monkeypatch.setattr(hermes_cli.plugins, "get_plugin_commands", lambda: {})
+    monkeypatch.setattr(agent.skill_commands, "get_skill_commands", lambda: {
+        "/daily-report": {
+            "name": "daily-report", "description": "Daily report",
+            "skill_md_path": str(skills / "daily-report" / "SKILL.md"),
+        },
+    })
+    bale_menu, _ = telegram_menu_commands(platform="bale")
+    telegram_menu, _ = telegram_menu_commands()
+    assert "daily_report" not in dict(bale_menu)
+    assert "daily_report" in dict(telegram_menu)

@@ -8,6 +8,8 @@ not document are disabled here instead of being probed at runtime.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import re
 from collections import OrderedDict
@@ -22,6 +24,8 @@ from plugins.platforms.telegram.adapter import (
     TelegramAdapter,
     check_telegram_requirements,
 )
+
+logger = logging.getLogger(__name__)
 
 BALE_API_BASE = "https://tapi.bale.ai/bot"
 BALE_FILE_BASE = "https://tapi.bale.ai/file/bot"
@@ -116,8 +120,38 @@ class BaleAdapter(TelegramAdapter):
         return "Markdown"
 
     async def _run_post_connect_housekeeping(self) -> None:
-        """Skip Telegram command menus, status text, and private-chat topics."""
-        return None
+        """Register Bale's default command menu without Telegram-only setup."""
+        try:
+            if not self._bot:
+                return
+            from telegram import BotCommand
+            from hermes_cli.commands import telegram_menu_commands, telegram_menu_max_commands
+
+            commands, hidden_count = telegram_menu_commands(
+                max_commands=telegram_menu_max_commands(platform="bale"),
+                platform="bale",
+                localize=True,
+            )
+            # /topic controls Telegram DM sessions and cannot run on Bale.
+            commands = [(name, desc) for name, desc in commands if name != "topic"]
+            # Bale supports the default menu; scoped menus are not verified.
+            await self._bot.set_my_commands([
+                BotCommand(name, desc[:256]) for name, desc in commands
+            ])
+            logger.info(
+                "Bale command menu registered (%d commands, %d hidden)",
+                len(commands), hidden_count,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.warning(
+                "Could not register Bale command menu: %s",
+                _redact_token(str(error), _get_bale_token(self.config)),
+            )
+        finally:
+            if self._post_connect_task is asyncio.current_task():
+                self._post_connect_task = None
 
     def _webhook_url(self) -> str:
         """Keep Bale on polling even when Telegram has a webhook configured."""
@@ -187,7 +221,11 @@ async def _standalone_send(
     media_files: list[str] | None = None,
     force_document: bool = False,
 ) -> dict[str, Any]:
-    """Send a cron or notification message directly through Bale's Bot API."""
+    """Send standalone text and/or files through Bale without a live gateway.
+
+    Files always use sendDocument to preserve their bytes and filenames,
+    including when force_document is false. Topics are not supported.
+    """
     token = _get_bale_token(pconfig)
     if not token:
         return {"error": "BALE_BOT_TOKEN is not configured"}
@@ -197,8 +235,16 @@ async def _standalone_send(
         # intentionally ignored instead of sending message_thread_id.
         pass
 
+    if not message.strip() and not media_files:
+        return {"error": "Bale delivery requires text or media files"}
+
     last_message_id = ""
     try:
+        # Validate every path before sending text or the first attachment.
+        paths = [Path(media_path) for media_path in media_files or []]
+        for path in paths:
+            if not path.is_file():
+                return {"error": _redact_token(f"Bale media file does not exist: {path}", token)}
         async with httpx.AsyncClient(timeout=20.0) as client:
             if message.strip():
                 response = await client.post(
@@ -209,13 +255,10 @@ async def _standalone_send(
                 data = response.json()
                 error = _bale_response_error(data, "sendMessage")
                 if error:
-                    return {"error": error}
+                    return {"error": _redact_token(error, token)}
                 last_message_id = _bale_message_id(data)
 
-            for media_path in media_files or []:
-                path = Path(media_path)
-                if not path.is_file():
-                    return {"error": f"Bale media file does not exist: {media_path}"}
+            for path in paths:
                 with path.open("rb") as media:
                     response = await client.post(
                         f"{BALE_API_BASE}{token}/sendDocument",
@@ -232,13 +275,11 @@ async def _standalone_send(
                 data = response.json()
                 error = _bale_response_error(data, "sendDocument")
                 if error:
-                    return {"error": error}
+                    return {"error": _redact_token(error, token)}
                 last_message_id = _bale_message_id(data)
-    except (httpx.HTTPError, ValueError) as error:
+    except (httpx.HTTPError, ValueError, OSError) as error:
         return {"error": _redact_token(str(error), token)}
 
-    if not message.strip() and not media_files:
-        return {"error": "Bale message and media attachments are empty"}
     return {"success": True, "message_id": last_message_id}
 
 

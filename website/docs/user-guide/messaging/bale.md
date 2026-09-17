@@ -84,16 +84,41 @@ Send the bot a Bale message and confirm that it answers in Persian.
 
 ## Cron and notification delivery
 
-Set a default Bale chat for scheduled text delivery:
+Set a default Bale chat for scheduled text and attachment delivery:
 
 ```bash
 BALE_HOME_CHANNEL=123456789
 BALE_HOME_CHANNEL_NAME=گزارش‌ها
 ```
 
-Cron jobs can then use `deliver: bale`. Standalone Bale delivery currently
-supports text only and returns a clear error instead of dropping media
-attachments.
+Cron jobs can then use `deliver: bale`. Standalone delivery supports text,
+attachments, or both without a running gateway. Each attachment is uploaded
+with `sendDocument`, preserving its filename and original bytes. When both are
+provided, text is sent first, followed by the files in order. Missing files are
+rejected before sending anything; an API failure after delivery has started
+can leave earlier messages delivered.
+
+## Command menu
+
+On connection, Hermes registers its command menu with Bale's `setMyCommands`.
+The menu comes from Hermes' shared command registry and includes available
+plugin and skill commands. `display.language: fa` gives built-in commands
+Persian descriptions. Restart the gateway after changing menu settings.
+
+Bale has its own menu preferences, separate from Telegram:
+
+```yaml
+platforms:
+  bale:
+    extra:
+      command_menu:
+        max_commands: 60
+        priority: [help, new, stop, status]
+        priority_mode: prepend
+```
+
+Skills disabled for Bale are excluded. Menu registration runs in the background;
+a failure is logged and does not prevent the bot from receiving messages.
 
 ## Compatibility boundary
 
@@ -101,7 +126,7 @@ The live adapter uses Bale's Telegram-compatible polling, message, edit, and
 file APIs. Hermes deliberately does not call Telegram-only extensions that
 Bale does not document:
 
-- Telegram command-menu registration
+- bot status descriptions
 - message reactions
 - rich messages and rich drafts
 - Telegram private-chat topics and forum setup

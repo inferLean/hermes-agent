@@ -688,11 +688,11 @@ def _nested_mapping(root: Mapping[str, Any], *path: str) -> Mapping[str, Any]:
     return node if isinstance(node, Mapping) else {}
 
 
-def _telegram_command_menu_config() -> dict[str, Any]:
-    """Return normalized Telegram command-menu config with safe defaults.
+def _telegram_command_menu_config(platform: str = "telegram") -> dict[str, Any]:
+    """Return normalized command-menu config for a Telegram-compatible platform.
 
     Canonical user-facing path:
-    ``platforms.telegram.extra.command_menu``.
+    ``platforms.<platform>.extra.command_menu``.
     """
     try:
         from hermes_cli.config import read_raw_config
@@ -702,7 +702,7 @@ def _telegram_command_menu_config() -> dict[str, Any]:
     if not isinstance(raw_cfg, Mapping):
         raw_cfg = {}
 
-    menu_cfg = dict(_nested_mapping(raw_cfg, "platforms", "telegram", "extra", "command_menu"))
+    menu_cfg = dict(_nested_mapping(raw_cfg, "platforms", platform, "extra", "command_menu"))
 
     max_commands = menu_cfg.get("max_commands", _DEFAULT_TELEGRAM_MENU_MAX_COMMANDS)
     try:
@@ -728,9 +728,9 @@ def _telegram_command_menu_config() -> dict[str, Any]:
     }
 
 
-def telegram_menu_max_commands() -> int:
-    """Return configured Telegram BotCommand menu cap with safe bounds."""
-    return int(_telegram_command_menu_config()["max_commands"])
+def telegram_menu_max_commands(*, platform: str = "telegram") -> int:
+    """Return the platform's configured BotCommand menu cap with safe bounds."""
+    return int(_telegram_command_menu_config(platform)["max_commands"])
 
 
 def _dedupe_sanitized_names(raw_names: list[str] | tuple[str, ...]) -> tuple[str, ...]:
@@ -744,8 +744,9 @@ def _dedupe_sanitized_names(raw_names: list[str] | tuple[str, ...]) -> tuple[str
     return tuple(result)
 
 
-def _telegram_effective_priority() -> tuple[str, ...]:
-    menu_cfg = _telegram_command_menu_config()
+def _telegram_effective_priority(platform: str = "telegram") -> tuple[str, ...]:
+    """Resolve the platform's configured command ordering."""
+    menu_cfg = _telegram_command_menu_config(platform)
     configured = list(_dedupe_sanitized_names(menu_cfg["priority"]))
     defaults = list(_dedupe_sanitized_names(_TELEGRAM_MENU_PRIORITY))
 
@@ -761,10 +762,13 @@ def _telegram_effective_priority() -> tuple[str, ...]:
 
 def _prioritize_telegram_menu_commands(
     commands: list[tuple[str, str]],
+    *,
+    platform: str = "telegram",
 ) -> list[tuple[str, str]]:
+    """Order commands using the selected platform's menu preferences."""
     priority = {
         name: index
-        for index, name in enumerate(_telegram_effective_priority())
+        for index, name in enumerate(_telegram_effective_priority(platform))
     }
     return [
         command
@@ -982,8 +986,10 @@ def _collect_gateway_skill_entries(
 # Platform-specific wrappers
 # ---------------------------------------------------------------------------
 
-def telegram_menu_commands(max_commands: int = 100) -> tuple[list[tuple[str, str]], int]:
-    """Return Telegram menu commands capped to the Bot API limit.
+def telegram_menu_commands(
+    max_commands: int = 100, *, platform: str = "telegram", localize: bool = False,
+) -> tuple[list[tuple[str, str]], int]:
+    """Return Telegram-compatible menu commands capped to the Bot API limit.
 
     Priority order (higher priority = never bumped by overflow):
       1. Core CommandDef commands (always included)
@@ -992,21 +998,34 @@ def telegram_menu_commands(max_commands: int = 100) -> tuple[list[tuple[str, str
 
     Skills are the only tier that gets trimmed when the cap is hit.
     User-installed hub skills are excluded — accessible via /skills.
-    Skills disabled for the ``"telegram"`` platform (via ``hermes skills
+    The selected platform owns menu preferences and skill filtering. Set
+    ``localize`` to translate built-in descriptions with the display language.
+    Skills disabled for that platform (via ``hermes skills
     config``) are excluded from the menu entirely.
 
     Returns:
         (menu_commands, hidden_count) where hidden_count is the number of
         commands omitted due to the cap.
     """
-    core_commands = _prioritize_telegram_menu_commands(list(telegram_bot_commands()))
+    core_commands = _prioritize_telegram_menu_commands(
+        list(telegram_bot_commands()), platform=platform,
+    )
+    if localize:
+        from agent.i18n import translate_or
+        canonical_names = {_sanitize_telegram_name(cmd.name): cmd.name for cmd in COMMAND_REGISTRY}
+        core_commands = [
+            (name, translate_or(
+                f"gateway.command_locale.descriptions.{canonical_names[name]}", desc,
+            ) if name in canonical_names else desc)
+            for name, desc in core_commands
+        ]
     reserved_names = {n for n, _ in core_commands}
     all_commands = list(core_commands)
     hidden_core_count = max(0, len(all_commands) - max_commands)
 
     remaining_slots = max(0, max_commands - len(all_commands))
     entries, hidden_count = _collect_gateway_skill_entries(
-        platform="telegram",
+        platform=platform,
         max_slots=remaining_slots,
         reserved_names=reserved_names,
         desc_limit=40,

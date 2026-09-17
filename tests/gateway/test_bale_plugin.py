@@ -200,20 +200,69 @@ async def test_adapter_sends_slash_confirmation_with_bale_markdown(bale_plugin):
     )
 
 
-def test_adapter_skips_telegram_only_post_connect_calls(bale_plugin):
-    """Bale startup must not call undocumented Telegram command-menu APIs."""
+@pytest.mark.asyncio
+async def test_adapter_registers_localized_bale_menu(monkeypatch, tmp_path, bale_plugin):
+    """Startup registers the shared menu using Bale preferences and Persian text."""
+    from unittest.mock import AsyncMock
+    from agent.i18n import translate_or
+    from collections import namedtuple
+    import telegram
 
-    class _Bot:
-        async def set_my_commands(self, *_args, **_kwargs) -> None:
-            """Fail if Bale attempts Telegram's command-menu extension."""
-            raise AssertionError("set_my_commands must not be called for Bale")
-
-    adapter = bale_plugin.BaleAdapter(
-        PlatformConfig(enabled=True, token="test-token", extra={})
+    # Gateway conftest installs a Telegram mock; preserve the BotCommand fields.
+    monkeypatch.setattr(telegram, "BotCommand", namedtuple("BotCommand", "command description"))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_LANGUAGE", "fa")
+    (tmp_path / "config.yaml").write_text(
+        "platforms:\n  bale:\n    extra:\n      command_menu:\n"
+        "        max_commands: 3\n        priority: [stop, topic, help]\n"
+        "  telegram:\n    extra:\n      command_menu:\n"
+        "        max_commands: 1\n        priority: [new]\n"
     )
-    adapter._bot = _Bot()
+    adapter = bale_plugin.BaleAdapter(PlatformConfig(token="test-token"))
+    adapter._bot = SimpleNamespace(set_my_commands=AsyncMock(return_value=True))
+    adapter._set_status_indicator = AsyncMock()
+    adapter._setup_dm_topics = AsyncMock()
 
-    asyncio.run(adapter._run_post_connect_housekeeping())
+    adapter._start_post_connect_housekeeping()
+    await adapter._post_connect_task
+
+    args, kwargs = adapter._bot.set_my_commands.call_args
+    assert kwargs == {}  # Only the default menu is verified on Bale.
+    assert [(cmd.command, cmd.description) for cmd in args[0]] == [
+        ("stop", translate_or("gateway.command_locale.descriptions.stop", "Stop")),
+        ("help", translate_or("gateway.command_locale.descriptions.help", "Help")),
+    ]
+    adapter._set_status_indicator.assert_not_called()
+    adapter._setup_dm_topics.assert_not_called()
+    assert adapter._post_connect_task is None
+
+
+@pytest.mark.asyncio
+async def test_menu_failure_is_nonfatal_and_redacts_token(bale_plugin, caplog):
+    """An unavailable command API must not break startup or expose credentials."""
+    from unittest.mock import AsyncMock
+
+    adapter = bale_plugin.BaleAdapter(PlatformConfig(token="secret-test-token"))
+    adapter._bot = SimpleNamespace(set_my_commands=AsyncMock(
+        side_effect=RuntimeError("https://tapi.bale.ai/botsecret-test-token/setMyCommands"),
+    ))
+    await adapter._run_post_connect_housekeeping()
+    assert "Could not register Bale command menu" in caplog.text
+    assert "secret-test-token" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_menu_task_remains_cancellable(bale_plugin):
+    """Disconnect can cancel a stalled menu request and clear the task handle."""
+    from unittest.mock import AsyncMock
+
+    adapter = bale_plugin.BaleAdapter(PlatformConfig(token="test-token"))
+    adapter._bot = SimpleNamespace(set_my_commands=AsyncMock(side_effect=asyncio.CancelledError))
+    adapter._start_post_connect_housekeeping()
+    task = adapter._post_connect_task
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert adapter._post_connect_task is None
 
 
 def test_adapter_does_not_inherit_telegram_webhook_configuration(
